@@ -1,0 +1,6 @@
+{
+  "name": "SidelineOS-video",
+  "description": "Eigenständiges Videoanalyse-, Film-Room-, Tagging- und Sharing-Plugin für SidelineOS-Core.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

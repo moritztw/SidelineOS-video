@@ -1,0 +1,34 @@
+name: SidelineOS Plugin Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Abhängigkeiten installieren
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=peer
+          else
+            npm install --omit=peer --no-audit --no-fund
+          fi
+      - run: npm run lint
+      - run: npm test
+      - run: npm run pack:plugin
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build-release/sideline-plugin-v1.tar.gz
+            build-release/sideline-plugin-v1.tar.gz.sha256
+            build-release/plugin.manifest.json
