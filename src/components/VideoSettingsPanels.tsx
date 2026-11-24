@@ -45,10 +45,8 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
   };
 
   return (
-    <section
-      id="modul-video-hotkeys"
-      className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-5"
-    >
+    <section id="modul-video-hotkeys" className="sideline-video-root">
+      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-5">
       <div className="flex items-center gap-2.5">
         <Keyboard className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
         <h2 className="text-base font-semibold text-white">{t('settingsUserTitle')}</h2>
@@ -148,6 +146,7 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
         </div>
         {konfliktHinweis && <p className="text-xs text-red-300">{konfliktHinweis}</p>}
       </div>
+      </div>
     </section>
   );
 }
@@ -166,22 +165,21 @@ export function VideoTeamSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
   }, [ctx.team.id]);
 
   return (
-    <section
-      id="modul-video-tagging-schema"
-      className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-4"
-    >
-      <div className="flex items-center gap-2.5">
-        <Tag className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
-        <h2 className="text-base font-semibold text-white">{t('settingsTeamTitle')}</h2>
+    <section id="modul-video-tagging-schema" className="sideline-video-root">
+      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <Tag className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-white">{t('settingsTeamTitle')}</h2>
+        </div>
+        <TaggingSchemaSettings
+          schema={schema}
+          teamRolle={ctx.aktiveTeamAnsicht}
+          onSave={async (next) => {
+            setSchema(next);
+            await videoApi.speichereSchema(ctx.team.id, next).catch(() => undefined);
+          }}
+        />
       </div>
-      <TaggingSchemaSettings
-        schema={schema}
-        teamRolle={ctx.aktiveTeamAnsicht}
-        onSave={async (next) => {
-          setSchema(next);
-          await videoApi.speichereSchema(ctx.team.id, next).catch(() => undefined);
-        }}
-      />
     </section>
   );
 }
@@ -189,31 +187,30 @@ export function VideoTeamSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
 export function VideoSysadminSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) {
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
   return (
-    <section
-      id="modul-video-s3-cleanup"
-      className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-3"
-    >
-      <div className="flex items-center gap-2.5">
-        <HardDrive className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
-        <h2 className="text-base font-semibold text-white">{t('settingsSysadminTitle')}</h2>
+    <section id="modul-video-s3-cleanup" className="sideline-video-root">
+      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-3">
+        <div className="flex items-center gap-2.5">
+          <HardDrive className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-white">{t('settingsSysadminTitle')}</h2>
+        </div>
+        <p className="text-xs text-[#8B949E]">
+          DSGVO-konforme S3-Isolation ohne Einsicht in Team-Videos oder Coach-Notizen.
+        </p>
+        <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+          <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
+            <dt className="text-[#8B949E]">Anonymisierter S3-Präfix</dt>
+            <dd className="mt-0.5 font-mono text-white">
+              teams/&lt;teamId&gt;/plugins/video-analysis/
+            </dd>
+          </div>
+          <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
+            <dt className="text-[#8B949E]">Cleanup-Schonfrist (Retention)</dt>
+            <dd className="mt-0.5 font-mono text-white video-tabular">
+              {ctx.s3Konfig.cleanupRetentionDays ?? 14} Tage
+            </dd>
+          </div>
+        </dl>
       </div>
-      <p className="text-xs text-[#8B949E]">
-        DSGVO-konforme S3-Isolation ohne Einsicht in Team-Videos oder Coach-Notizen.
-      </p>
-      <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-        <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
-          <dt className="text-[#8B949E]">Anonymisierter S3-Präfix</dt>
-          <dd className="mt-0.5 font-mono text-white">
-            teams/&lt;teamId&gt;/plugins/video-analysis/
-          </dd>
-        </div>
-        <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
-          <dt className="text-[#8B949E]">Cleanup-Schonfrist (Retention)</dt>
-          <dd className="mt-0.5 font-mono text-white video-tabular">
-            {ctx.s3Konfig.cleanupRetentionDays ?? 14} Tage
-          </dd>
-        </div>
-      </dl>
     </section>
   );
 }

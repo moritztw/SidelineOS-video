@@ -10,6 +10,35 @@ import type { SichtbarkeitsStufe, VideoKategorie } from '../types/video';
 
 type ImportModus = 'CLIP_FILE' | 'TIME_SLICE' | 'BUNDLE';
 
+async function ermittleVideoDauerMs(file: File, fallbackMs: number): Promise<number> {
+  if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return fallbackMs;
+  }
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    const timer = window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      resolve(fallbackMs);
+    }, 3000);
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer);
+      const dauer = Number.isFinite(video.duration) && video.duration > 0
+        ? Math.round(video.duration * 1000)
+        : fallbackMs;
+      URL.revokeObjectURL(url);
+      resolve(dauer);
+    };
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(fallbackMs);
+    };
+    video.src = url;
+  });
+}
+
 export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
   const { uploadModalOffen, setUploadModalOffen, ladeBasisDaten } = useVideoAnalysis();
@@ -62,6 +91,7 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
         const plays = [];
         for (let i = 0; i < sidelineFiles.length; i += 1) {
           const sl = sidelineFiles[i];
+          const slDauerMs = await ermittleVideoDauerMs(sl, 12000);
           const slPath = `reels/${Date.now()}/sl_${i + 1}_${sl.name}`;
           const slUploaded = await videoApi.ladeDateiZuS3(ctx.team.id, sl, slPath, (p) =>
             setFortschritt(Math.round(((i + p / 100) / sidelineFiles.length) * 100))
@@ -83,13 +113,14 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
               s3Key: slUploaded.key,
               sourceMode: 'CLIP_FILE',
               startMs: 0,
-              endMs: 12000,
+              endMs: slDauerMs,
               fileSizeBytes: sl.size,
             },
           };
 
           const ez = endzoneFiles[i];
           if (ez) {
+            const ezDauerMs = await ermittleVideoDauerMs(ez, slDauerMs);
             const ezPath = `reels/${Date.now()}/ez_${i + 1}_${ez.name}`;
             const ezUploaded = await videoApi.ladeDateiZuS3(ctx.team.id, ez, ezPath);
             sources.ENDZONE = {
@@ -97,7 +128,7 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
               s3Key: ezUploaded.key,
               sourceMode: 'CLIP_FILE',
               startMs: 0,
-              endMs: 12000,
+              endMs: ezDauerMs,
               offsetMs: offsetVal,
               fileSizeBytes: ez.size,
             };
@@ -121,6 +152,7 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
       } else {
         if (!title.trim()) throw new Error('Titel des Reels ist erforderlich.');
         if (!singleTapeFile) throw new Error('Bitte eine Videodatei auswählen.');
+        const tapeDauerMs = await ermittleVideoDauerMs(singleTapeFile, 25000);
         const path = `reels/${Date.now()}/${singleTapeFile.name}`;
         const uploaded = await videoApi.ladeDateiZuS3(
           ctx.team.id,
@@ -144,7 +176,7 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   s3Key: uploaded.key,
                   sourceMode: 'TIME_SLICE',
                   startMs: 0,
-                  endMs: 25000,
+                  endMs: tapeDauerMs,
                   fileSizeBytes: singleTapeFile.size,
                 },
               },

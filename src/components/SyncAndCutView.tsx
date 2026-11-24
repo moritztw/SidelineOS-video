@@ -1,24 +1,51 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
 import { createPluginTranslator } from '@sidelineos/plugin-sdk';
-import { AlertTriangle, Check, Pause, Play, Scissors, SlidersHorizontal } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  Scissors,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
 import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
 import { videoApi } from '../services/apiClient';
-import { FRAME_MS, STANDARD_HOTKEYS, formatiereFrameTimecode, normalisiereTaste } from '../services/frameAndHotkeys';
+import {
+  FRAME_MS,
+  STANDARD_HOTKEYS,
+  formatiereFrameTimecode,
+  normalisiereTaste,
+} from '../services/frameAndHotkeys';
 import { analysierePlaySyncStatus } from '../services/smartPlaylistEngine';
 
 export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
   const { aktivesReel, aktivePlays, userPrefs, aktualisierePlaysLokal } = useVideoAnalysis();
 
+  const masterVideoRef = useRef<HTMLVideoElement | null>(null);
+  const slaveVideoRef = useRef<HTMLVideoElement | null>(null);
+  const fastCutVideoRef = useRef<HTMLVideoElement | null>(null);
+
   const [modus, setModus] = useState<'SYNC' | 'FAST_CUT'>('SYNC');
   const [aktivesPlayId, setAktivesPlayId] = useState<string | null>(
     aktivePlays[0]?.id ?? null
   );
   const [sekundaerWinkel, setSekundaerWinkel] = useState<string>('ENDZONE');
+
+  // Sync-Playback-State
+  const [syncLaeuft, setSyncLaeuft] = useState(false);
+  const [syncPosMs, setSyncPosMs] = useState(0);
+  const [syncDauerMs, setSyncDauerMs] = useState(15000);
+
+  // Fast-Cut-State
+  const [fastCutWinkel, setFastCutWinkel] = useState<string>('SIDELINE');
   const [tapePosMs, setTapePosMs] = useState(0);
-  const [tapeSpeed, setTapeSpeed] = useState<number>(0); // -2, 0, 1, 2 (J/K/L)
+  const [tapeDauerMs, setTapeDauerMs] = useState(120000);
+  const [tapeSpeed, setTapeSpeed] = useState<number>(0); // -4, -2, 0, 1, 2, 4 (J/K/L)
   const [inMs, setInMs] = useState<number | null>(null);
   const [outMs, setOutMs] = useState<number | null>(null);
   const [statusHinweis, setStatusHinweis] = useState<string | null>(null);
@@ -33,14 +60,141 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     return analysierePlaySyncStatus(aktivePlays, aktivesReel.angles);
   }, [aktivesReel, aktivePlays]);
 
-  // Fast-Cut Transport-Loop (J / K / L)
+  const masterQuelle =
+    aktivesPlay?.sources.SIDELINE ??
+    (aktivesPlay ? Object.values(aktivesPlay.sources)[0] : undefined);
+  const slaveQuelle = aktivesPlay?.sources[sekundaerWinkel];
+  const aktuellerOffset = slaveQuelle?.offsetMs ?? 0;
+
+  // Quelle für Fast-Cut (bevorzugt ersten Play mit gewähltem Winkel)
+  const fastCutQuelle = useMemo(() => {
+    const direkter = aktivesPlay?.sources[fastCutWinkel];
+    if (direkter) return direkter;
+    for (const p of aktivePlays) {
+      if (p.sources[fastCutWinkel]) return p.sources[fastCutWinkel];
+    }
+    return masterQuelle;
+  }, [aktivesPlay, aktivePlays, fastCutWinkel, masterQuelle]);
+
+  useEffect(() => {
+    if (aktivePlays.length > 0 && !aktivePlays.some((p) => p.id === aktivesPlayId)) {
+      setAktivesPlayId(aktivePlays[0].id);
+    }
+  }, [aktivePlays, aktivesPlayId]);
+
+  useEffect(() => {
+    if (masterQuelle) {
+      setSyncDauerMs(Math.max(FRAME_MS, masterQuelle.endMs - masterQuelle.startMs || 15000));
+    }
+    setSyncLaeuft(false);
+    setSyncPosMs(0);
+  }, [aktivesPlay?.id, masterQuelle?.streamUrl]);
+
+  // Echte Sync-Video-Wiedergabe (Master + Sekundär parallel)
+  useEffect(() => {
+    if (modus !== 'SYNC') return;
+    const masterEl = masterVideoRef.current;
+    const slaveEl = slaveVideoRef.current;
+
+    if (syncLaeuft) {
+      if (masterEl && masterQuelle?.streamUrl) {
+        masterEl.playbackRate = 1;
+        masterEl.play().catch(() => undefined);
+      }
+      if (slaveEl && slaveQuelle?.streamUrl) {
+        slaveEl.playbackRate = 1;
+        slaveEl.play().catch(() => undefined);
+      }
+    } else {
+      masterEl?.pause();
+      slaveEl?.pause();
+    }
+  }, [modus, syncLaeuft, aktivesPlay?.id, sekundaerWinkel, masterQuelle?.streamUrl, slaveQuelle?.streamUrl]);
+
+  useEffect(() => {
+    if (modus !== 'SYNC' || !syncLaeuft) return;
+    const id = window.setInterval(() => {
+      const masterEl = masterVideoRef.current;
+      setSyncPosMs((alt) => {
+        const naechste =
+          masterEl && masterEl.readyState >= 2 && !masterEl.paused
+            ? Math.max(0, masterEl.currentTime * 1000 - (masterQuelle?.startMs ?? 0))
+            : alt + FRAME_MS;
+        if (naechste >= syncDauerMs || masterEl?.ended) {
+          setSyncLaeuft(false);
+          return 0;
+        }
+        return naechste;
+      });
+    }, FRAME_MS);
+    return () => window.clearInterval(id);
+  }, [modus, syncLaeuft, syncDauerMs, masterQuelle?.startMs]);
+
+  const springeSyncMs = (zielMs: number) => {
+    const geclampt = Math.max(0, Math.min(syncDauerMs, Math.round(zielMs / FRAME_MS) * FRAME_MS));
+    setSyncPosMs(geclampt);
+    if (masterVideoRef.current && masterVideoRef.current.readyState >= 1) {
+      masterVideoRef.current.currentTime = Math.max(
+        0,
+        ((masterQuelle?.startMs ?? 0) + geclampt) / 1000
+      );
+    }
+    if (slaveVideoRef.current && slaveVideoRef.current.readyState >= 1) {
+      slaveVideoRef.current.currentTime = Math.max(
+        0,
+        ((slaveQuelle?.startMs ?? 0) + aktuellerOffset + geclampt) / 1000
+      );
+    }
+  };
+
+  // Echte Fast-Cut-Videosteuerung (J / K / L)
+  useEffect(() => {
+    if (modus !== 'FAST_CUT') return;
+    const videoEl = fastCutVideoRef.current;
+    if (!videoEl || !fastCutQuelle?.streamUrl) return;
+
+    if (tapeSpeed > 0) {
+      videoEl.playbackRate = tapeSpeed;
+      videoEl.play().catch(() => undefined);
+    } else {
+      videoEl.pause();
+    }
+  }, [modus, tapeSpeed, fastCutQuelle?.streamUrl]);
+
   useEffect(() => {
     if (modus !== 'FAST_CUT' || tapeSpeed === 0) return;
     const id = window.setInterval(() => {
-      setTapePosMs((alt) => Math.max(0, alt + tapeSpeed * FRAME_MS * 2));
+      const videoEl = fastCutVideoRef.current;
+      if (tapeSpeed > 0 && videoEl && fastCutQuelle?.streamUrl) {
+        if (videoEl.readyState >= 2 && !videoEl.paused) {
+          setTapePosMs(Math.round(videoEl.currentTime * 1000));
+        }
+        if (videoEl.ended) {
+          setTapeSpeed(0);
+        }
+      } else {
+        setTapePosMs((alt) => {
+          const next = Math.max(0, Math.min(tapeDauerMs, alt + tapeSpeed * FRAME_MS * 2));
+          if (videoEl && videoEl.readyState >= 1) {
+            videoEl.currentTime = next / 1000;
+          }
+          if (next <= 0 && tapeSpeed < 0) {
+            setTapeSpeed(0);
+          }
+          return next;
+        });
+      }
     }, FRAME_MS);
     return () => window.clearInterval(id);
-  }, [modus, tapeSpeed]);
+  }, [modus, tapeSpeed, fastCutQuelle?.streamUrl, tapeDauerMs]);
+
+  const springeFastCutMs = (zielMs: number) => {
+    const geclampt = Math.max(0, Math.min(tapeDauerMs, Math.round(zielMs / FRAME_MS) * FRAME_MS));
+    setTapePosMs(geclampt);
+    if (fastCutVideoRef.current && fastCutVideoRef.current.readyState >= 1) {
+      fastCutVideoRef.current.currentTime = geclampt / 1000;
+    }
+  };
 
   // Fast-Cut Tastenkürzel (I / O / J-K-L)
   useEffect(() => {
@@ -58,7 +212,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         setTapeSpeed(0);
       } else if (taste === hotkeys.fastCutForward) {
         e.preventDefault();
-        setTapeSpeed((s) => (s >= 2 ? 4 : 2));
+        setTapeSpeed((s) => (s >= 2 ? 4 : s >= 1 ? 2 : 1));
       } else if (taste === hotkeys.markIn) {
         e.preventDefault();
         setInMs(tapePosMs);
@@ -79,10 +233,6 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     );
   }
 
-  const masterQuelle = aktivesPlay.sources.SIDELINE ?? Object.values(aktivesPlay.sources)[0];
-  const slaveQuelle = aktivesPlay.sources[sekundaerWinkel];
-  const aktuellerOffset = slaveQuelle?.offsetMs ?? 0;
-
   const speichereOffset = async (neuerOffsetMs: number) => {
     if (!slaveQuelle) return;
     aktualisierePlaysLokal((alt) =>
@@ -98,6 +248,12 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           : p
       )
     );
+    if (slaveVideoRef.current && slaveVideoRef.current.readyState >= 1) {
+      slaveVideoRef.current.currentTime = Math.max(
+        0,
+        ((slaveQuelle.startMs ?? 0) + neuerOffsetMs + syncPosMs) / 1000
+      );
+    }
     await videoApi.aktualisierePlay(ctx.team.id, aktivesPlay.id, {
       angleOffsets: { [sekundaerWinkel]: { offsetMs: neuerOffsetMs } },
     });
@@ -110,7 +266,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       return;
     }
     const nextNr = aktivePlays.reduce((m, p) => Math.max(m, p.playNumber), 0) + 1;
-    const basisSrc = masterQuelle;
+    const basisSrc = fastCutQuelle ?? masterQuelle;
     const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
       playNumber: nextNr,
       breakdown: { odk: 'O', play_number: nextNr },
@@ -166,7 +322,10 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         <div className="flex items-center gap-1 rounded-lg border border-[#232933] bg-[#13171D] p-1">
           <button
             type="button"
-            onClick={() => setModus('SYNC')}
+            onClick={() => {
+              setTapeSpeed(0);
+              setModus('SYNC');
+            }}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
               modus === 'SYNC' ? 'bg-[#F59E0B] text-[#0B0E11]' : 'text-[#8B949E] hover:text-white'
             }`}
@@ -176,7 +335,10 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </button>
           <button
             type="button"
-            onClick={() => setModus('FAST_CUT')}
+            onClick={() => {
+              setSyncLaeuft(false);
+              setModus('FAST_CUT');
+            }}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
               modus === 'FAST_CUT'
                 ? 'bg-[#F59E0B] text-[#0B0E11]'
@@ -200,7 +362,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-4 lg:col-span-8">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Master-Viewport */}
+              {/* Master-Viewport mit echtem Video */}
               <div className="rounded-xl border border-[#232933] bg-[#13171D] p-3 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-white">
@@ -208,12 +370,42 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   </span>
                   <span className="font-mono text-[#8B949E] video-tabular">0 ms Basis</span>
                 </div>
-                <div className="flex aspect-video items-center justify-center rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
-                  {masterQuelle?.fileName ?? 'Kein Master-Clip'}
+                <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
+                  {masterQuelle?.streamUrl ? (
+                    <video
+                      key={`sync-master-${aktivesPlay.id}-${masterQuelle.streamUrl}`}
+                      ref={masterVideoRef}
+                      src={masterQuelle.streamUrl}
+                      preload="auto"
+                      playsInline
+                      muted
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        if (
+                          masterQuelle.sourceMode === 'CLIP_FILE' &&
+                          Number.isFinite(v.duration) &&
+                          v.duration > 0
+                        ) {
+                          setSyncDauerMs(Math.round(v.duration * 1000));
+                        }
+                        const startSek = Math.max(0, (masterQuelle.startMs + syncPosMs) / 1000);
+                        if (startSek > 0) {
+                          v.currentTime = startSek;
+                        }
+                        if (syncLaeuft && v.paused) {
+                          v.playbackRate = 1;
+                          v.play().catch(() => undefined);
+                        }
+                      }}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <span>{masterQuelle?.fileName ?? 'Kein Master-Clip'}</span>
+                  )}
                 </div>
               </div>
 
-              {/* Sekundärer Viewport */}
+              {/* Sekundärer Viewport mit echtem Video */}
               <div className="rounded-xl border border-[#232933] bg-[#13171D] p-3 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <select
@@ -235,9 +427,30 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     Offset: {aktuellerOffset} ms
                   </span>
                 </div>
-                <div className="flex aspect-video items-center justify-center rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
-                  {slaveQuelle ? (
-                    slaveQuelle.fileName
+                <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
+                  {slaveQuelle?.streamUrl ? (
+                    <video
+                      key={`sync-slave-${aktivesPlay.id}-${sekundaerWinkel}-${slaveQuelle.streamUrl}`}
+                      ref={slaveVideoRef}
+                      src={slaveQuelle.streamUrl}
+                      preload="auto"
+                      playsInline
+                      muted
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        v.currentTime = Math.max(
+                          0,
+                          ((slaveQuelle.startMs ?? 0) + aktuellerOffset + syncPosMs) / 1000
+                        );
+                        if (syncLaeuft && v.paused) {
+                          v.playbackRate = 1;
+                          v.play().catch(() => undefined);
+                        }
+                      }}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : slaveQuelle ? (
+                    <span>{slaveQuelle.fileName}</span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-amber-300">
                       <AlertTriangle className="h-4 w-4" aria-hidden="true" />
@@ -246,6 +459,60 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Synchronisierte Transportleiste */}
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#232933] bg-[#13171D] px-4 py-2.5">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  title="-1 Frame"
+                  onClick={() => {
+                    setSyncLaeuft(false);
+                    springeSyncMs(syncPosMs - FRAME_MS);
+                  }}
+                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSyncLaeuft((v) => !v)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
+                >
+                  {syncLaeuft ? (
+                    <Pause className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Play className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  title="+1 Frame"
+                  onClick={() => {
+                    setSyncLaeuft(false);
+                    springeSyncMs(syncPosMs + FRAME_MS);
+                  }}
+                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(FRAME_MS, syncDauerMs)}
+                step={FRAME_MS}
+                value={Math.min(syncPosMs, Math.max(FRAME_MS, syncDauerMs))}
+                onChange={(e) => {
+                  setSyncLaeuft(false);
+                  springeSyncMs(Number(e.target.value));
+                }}
+                className="h-1.5 flex-1 min-w-[140px] accent-[#F59E0B]"
+              />
+              <span className="font-mono text-xs text-[#8B949E] video-tabular">
+                {formatiereFrameTimecode(syncPosMs)}
+              </span>
             </div>
 
             {slaveQuelle && (
@@ -319,18 +586,70 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <span className="font-mono text-white">O</span> Out-Punkt
               </p>
             </div>
-            <div className="font-mono text-sm text-[#F59E0B] video-tabular">
-              {formatiereFrameTimecode(tapePosMs)} ({tapeSpeed}x)
+            <div className="flex items-center gap-3">
+              <select
+                aria-label="Kamerawinkel für Fast-Cut"
+                value={fastCutWinkel}
+                onChange={(e) => {
+                  setTapeSpeed(0);
+                  setFastCutWinkel(e.target.value);
+                }}
+                className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1 text-xs text-white"
+              >
+                {aktivesReel.angles.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+              <div className="font-mono text-sm text-[#F59E0B] video-tabular">
+                {formatiereFrameTimecode(tapePosMs)} ({tapeSpeed}x)
+              </div>
             </div>
+          </div>
+
+          {/* Fast-Cut Video-Viewport */}
+          <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-[#232933] bg-[#07090C]">
+            {fastCutQuelle?.streamUrl ? (
+              <video
+                key={`fastcut-${fastCutWinkel}-${fastCutQuelle.streamUrl}`}
+                ref={fastCutVideoRef}
+                src={fastCutQuelle.streamUrl}
+                preload="auto"
+                playsInline
+                muted
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (Number.isFinite(v.duration) && v.duration > 0) {
+                    setTapeDauerMs(Math.round(v.duration * 1000));
+                  }
+                  if (tapePosMs > 0) {
+                    v.currentTime = tapePosMs / 1000;
+                  }
+                  if (tapeSpeed > 0 && v.paused) {
+                    v.playbackRate = tapeSpeed;
+                    v.play().catch(() => undefined);
+                  }
+                }}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="font-mono text-xs text-[#8B949E]">
+                {fastCutQuelle?.fileName ?? 'Keine Videodatei für Fast-Cut geladen'}
+              </span>
+            )}
           </div>
 
           <input
             type="range"
             min={0}
-            max={600000}
+            max={Math.max(FRAME_MS, tapeDauerMs)}
             step={FRAME_MS}
-            value={tapePosMs}
-            onChange={(e) => setTapePosMs(Number(e.target.value))}
+            value={Math.min(tapePosMs, Math.max(FRAME_MS, tapeDauerMs))}
+            onChange={(e) => {
+              setTapeSpeed(0);
+              springeFastCutMs(Number(e.target.value));
+            }}
             className="w-full accent-[#F59E0B]"
           />
 
@@ -338,7 +657,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setTapeSpeed(-2)}
+                onClick={() => setTapeSpeed((s) => (s <= -2 ? -4 : -2))}
                 className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
               >
                 J (-2x)
@@ -352,10 +671,17 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
               <button
                 type="button"
-                onClick={() => setTapeSpeed(2)}
+                onClick={() => setTapeSpeed(1)}
                 className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
               >
-                <Play className="h-3.5 w-3.5" aria-hidden="true" /> L (+2x)
+                <Play className="h-3.5 w-3.5" aria-hidden="true" /> L (1x)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTapeSpeed(2)}
+                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
+              >
+                L (+2x)
               </button>
             </div>
 

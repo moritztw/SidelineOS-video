@@ -89,6 +89,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const [aktiverWinkel, setAktiverWinkel] = useState<WinkelCode>('SIDELINE');
   const [laeuft, setLaeuft] = useState(false);
   const [aktuelleMs, setAktuelleMs] = useState(0);
+  const [realeClipDauerMs, setRealeClipDauerMs] = useState<number | null>(null);
+  const [videoFehler, setVideoFehler] = useState<string | null>(null);
   const [tempo, setTempo] = useState<number>(userPrefs?.defaultPlaybackRate ?? 1);
   const [autoStop, setAutoStop] = useState<boolean>(userPrefs?.autoStopEnabled ?? true);
   const [istVollbild, setIstVollbild] = useState(false);
@@ -110,13 +112,36 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   }, [sichtbarePlays, aktivesPlayId]);
 
-  const aktiveQuelle = aktivesPlay?.sources[aktiverWinkel] ??
+  useEffect(() => {
+    if (!aktivesPlay) return;
+    if (!aktivesPlay.sources[aktiverWinkel]) {
+      const ersterWinkel = Object.keys(aktivesPlay.sources)[0];
+      if (ersterWinkel) setAktiverWinkel(ersterWinkel);
+    }
+  }, [aktivesPlay, aktiverWinkel]);
+
+  const aktiveQuelle =
+    aktivesPlay?.sources[aktiverWinkel] ??
     (aktivesPlay ? Object.values(aktivesPlay.sources)[0] : undefined);
 
   const playStartMs = aktiveQuelle?.startMs ?? 0;
-  const playEndMs = Math.max(playStartMs + 4000, aktiveQuelle?.endMs ?? 12000);
+  const gespeicherteDauerMs = Math.max(
+    FRAME_MS,
+    (aktiveQuelle?.endMs ?? 12000) - playStartMs
+  );
+  const effektiveDauerMs =
+    aktiveQuelle?.sourceMode === 'TIME_SLICE'
+      ? gespeicherteDauerMs
+      : realeClipDauerMs ?? gespeicherteDauerMs;
+  const playEndMs = playStartMs + effektiveDauerMs;
   const effektiverOffset = aktiveQuelle?.offsetMs ?? 0;
   const aktuellerFrame = msZuFrameIndex(aktuelleMs);
+
+  // Video-Quelle gewechselt -> Metadaten-Dauer & Fehler zurücksetzen
+  useEffect(() => {
+    setRealeClipDauerMs(null);
+    setVideoFehler(null);
+  }, [aktiveQuelle?.streamUrl, aktivesPlay?.id, aktiverWinkel]);
 
   // Exakte Frame-Zuordnung für Zeichnungen & Coach-Notizen (kein Vorab-Aufblitzen!)
   const frameTelestration = useMemo(
@@ -162,7 +187,27 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     return Array.from(frames);
   }, [telestrations, notizen, aktivesPlay, aktiverWinkel, istCoachOderAdmin]);
 
-  // Quantisierter 25-fps-Wiedergabe-Loop (Video-Element oder synthetischer Fallback)
+  // Echte <video>-Wiedergabe direkt mit Play/Pause/PlaybackRate synchronisieren
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !aktiveQuelle?.streamUrl) return;
+    videoEl.playbackRate = tempo;
+    if (laeuft) {
+      const zielSek = Math.max(0, (playStartMs + effektiverOffset + letzteMsRef.current) / 1000);
+      if (videoEl.readyState >= 1 && Math.abs(videoEl.currentTime - zielSek) > 0.25) {
+        videoEl.currentTime = zielSek;
+      }
+      videoEl.play().catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setVideoFehler(err instanceof Error ? err.message : 'Videowiedergabe blockiert.');
+        setLaeuft(false);
+      });
+    } else {
+      videoEl.pause();
+    }
+  }, [laeuft, tempo, aktiveQuelle?.streamUrl, aktivesPlay?.id, aktiverWinkel]);
+
+  // Quantisierter 25-fps-Tracking-Loop (liest reale Video-Zeit oder fällt ohne streamUrl auf Timer zurück)
   useEffect(() => {
     if (!laeuft) return;
     let timerId: number;
@@ -173,12 +218,19 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       const deltaMs = (jetzt - letzterTick) * tempo;
       letzterTick = jetzt;
 
+      const videoEl = videoRef.current;
+      const hatEchtesVideo = Boolean(aktiveQuelle?.streamUrl) && !videoFehler;
+
       setAktuelleMs((alt) => {
-        const videoEl = videoRef.current;
-        const naechsteRoh =
-          videoEl && videoEl.readyState >= 2 && !videoEl.paused
-            ? Math.max(0, videoEl.currentTime * 1000 - playStartMs - effektiverOffset)
-            : alt + deltaMs;
+        let naechsteRoh: number;
+        if (hatEchtesVideo && videoEl) {
+          if (videoEl.readyState < 2 || videoEl.paused) {
+            return alt;
+          }
+          naechsteRoh = Math.max(0, videoEl.currentTime * 1000 - playStartMs - effektiverOffset);
+        } else {
+          naechsteRoh = alt + deltaMs;
+        }
 
         if (autoStop) {
           const trefferFrame = findeUeberfahrenenAutoStopFrame(
@@ -190,18 +242,25 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             const stopMs = frameIndexZuMs(trefferFrame);
             letzteMsRef.current = stopMs;
             setLaeuft(false);
-            if (videoEl && videoEl.readyState >= 2) {
+            if (videoEl) {
               videoEl.pause();
-              videoEl.currentTime = (playStartMs + effektiverOffset + stopMs) / 1000;
+              if (videoEl.readyState >= 1) {
+                videoEl.currentTime = Math.max(0, (playStartMs + effektiverOffset + stopMs) / 1000);
+              }
             }
             return stopMs;
           }
         }
 
-        const dauer = playEndMs - playStartMs;
-        if (naechsteRoh >= dauer) {
+        if (naechsteRoh >= effektiveDauerMs || (hatEchtesVideo && videoEl?.ended)) {
           setLaeuft(false);
           letzteMsRef.current = 0;
+          if (videoEl) {
+            videoEl.pause();
+            if (videoEl.readyState >= 1) {
+              videoEl.currentTime = Math.max(0, (playStartMs + effektiverOffset) / 1000);
+            }
+          }
           return 0;
         }
         letzteMsRef.current = naechsteRoh;
@@ -212,20 +271,34 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
     timerId = window.setTimeout(tick, FRAME_MS);
     return () => window.clearTimeout(timerId);
-  }, [laeuft, tempo, autoStop, autoStopZielFrames, playStartMs, playEndMs, effektiverOffset]);
+  }, [
+    laeuft,
+    tempo,
+    autoStop,
+    autoStopZielFrames,
+    playStartMs,
+    effektiveDauerMs,
+    effektiverOffset,
+    aktiveQuelle?.streamUrl,
+    videoFehler,
+  ]);
 
   const springeZuMs = (zielMs: number) => {
-    const dauer = Math.max(FRAME_MS, playEndMs - playStartMs);
+    const dauer = Math.max(FRAME_MS, effektiveDauerMs);
     const geclampt = Math.max(0, Math.min(dauer, Math.round(zielMs / FRAME_MS) * FRAME_MS));
     letzteMsRef.current = geclampt;
     setAktuelleMs(geclampt);
     if (videoRef.current && videoRef.current.readyState >= 1) {
-      videoRef.current.currentTime = (playStartMs + effektiverOffset + geclampt) / 1000;
+      videoRef.current.currentTime = Math.max(
+        0,
+        (playStartMs + effektiverOffset + geclampt) / 1000
+      );
     }
   };
 
   const handlePlayWechsel = (playId: string) => {
     setLaeuft(false);
+    if (videoRef.current) videoRef.current.pause();
     setAktivesPlayId(playId);
     setAktuelleMs(0);
     letzteMsRef.current = 0;
@@ -233,14 +306,13 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   };
 
   const handleWinkelWechsel = (winkel: WinkelCode) => {
-    // Behält aktuelle relative Play-Position beim Winkelwechsel bei
     setAktiverWinkel(winkel);
     setSelectedElId(null);
     if (videoRef.current && videoRef.current.readyState >= 1) {
       const zielQuelle = aktivesPlay?.sources[winkel];
       const neuerStart = zielQuelle?.startMs ?? 0;
       const neuerOffset = zielQuelle?.offsetMs ?? 0;
-      videoRef.current.currentTime = (neuerStart + neuerOffset + aktuelleMs) / 1000;
+      videoRef.current.currentTime = Math.max(0, (neuerStart + neuerOffset + aktuelleMs) / 1000);
     }
   };
 
@@ -441,22 +513,48 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         className="overflow-hidden rounded-xl border border-[#232933] bg-[#0B0E11]"
       >
         <div className="relative aspect-video w-full bg-[#07090C]">
-          {aktiveQuelle?.streamUrl ? (
+          {aktiveQuelle?.streamUrl && !videoFehler ? (
             <video
+              key={`${aktivesPlay.id}-${aktiverWinkel}-${aktiveQuelle.streamUrl}`}
               ref={videoRef}
               src={aktiveQuelle.streamUrl}
+              preload="auto"
               playsInline
               muted
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                if (Number.isFinite(v.duration) && v.duration > 0) {
+                  setRealeClipDauerMs(Math.round(v.duration * 1000));
+                }
+                const startSek = Math.max(
+                  0,
+                  (playStartMs + effektiverOffset + letzteMsRef.current) / 1000
+                );
+                if (startSek > 0) {
+                  v.currentTime = startSek;
+                }
+                if (laeuft && v.paused) {
+                  v.playbackRate = tempo;
+                  v.play().catch((err: unknown) => {
+                    if (err instanceof DOMException && err.name === 'AbortError') return;
+                    setVideoFehler(err instanceof Error ? err.message : 'Videowiedergabe blockiert.');
+                    setLaeuft(false);
+                  });
+                }
+              }}
+              onError={() =>
+                setVideoFehler('Videodatei konnte vom S3-Stream nicht geladen werden.')
+              }
               className="h-full w-full object-contain"
             />
           ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,#18202B_0%,#07090C_75%)] text-center">
+            <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,#18202B_0%,#07090C_75%)] text-center px-4">
               <div className="font-mono text-2xl font-semibold text-white video-tabular">
                 PLAY #{aktivesPlay.playNumber} · {aktiverWinkel}
               </div>
               <div className="mt-1 font-mono text-xs text-[#8B949E] video-tabular">
-                {aktiveQuelle?.fileName ?? 'Kein Video-Asset hinterlegt'} ·{' '}
-                {formatiereFrameTimecode(aktuelleMs)} (25 fps)
+                {videoFehler ??
+                  `${aktiveQuelle?.fileName ?? 'Kein Video-Asset hinterlegt'} · ${formatiereFrameTimecode(aktuelleMs)} (25 fps)`}
               </div>
             </div>
           )}
@@ -693,9 +791,9 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           <input
             type="range"
             min={0}
-            max={Math.max(FRAME_MS, playEndMs - playStartMs)}
+            max={Math.max(FRAME_MS, effektiveDauerMs)}
             step={FRAME_MS}
-            value={aktuelleMs}
+            value={Math.min(aktuelleMs, Math.max(FRAME_MS, effektiveDauerMs))}
             onChange={(e) => {
               setLaeuft(false);
               springeZuMs(Number(e.target.value));

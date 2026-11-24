@@ -75,6 +75,10 @@ test('dist/client.js, dist/client.css und dist/server.js erfüllen die Core-Vert
   assert.doesNotMatch(clientCode, /dangerouslySetInnerHTML/);
   assert.match(clientCode, /export\s*\{[\s\S]*default[\s\S]*\}/);
   assert.ok(clientCss.length > 100);
+  assert.match(clientCss, /\.sideline-video-root\s*\{[\s\S]*?\.grid-cols-1\s*\{/);
+  assert.doesNotMatch(clientCss, /:root\b/);
+  assert.doesNotMatch(clientCss, /@layer\s+utilities/);
+  assert.doesNotMatch(clientCss, /^\.(grid-cols-1|hidden|block|sticky|flex|grid)\s*\{/m);
 
   const backend = serverMod.backendPlugin ?? serverMod.default;
   assert.equal(backend.manifest.id, 'video-analysis');

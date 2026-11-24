@@ -1,6 +1,4 @@
-@layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/theme.css";
 
 @theme {
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
@@ -8,6 +6,12 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-.video-tabular {
+.sideline-video-root {
+  @import "tailwindcss/utilities.css";
+  font-family: var(--font-sans);
+  color: #e6edf3;
+}
+
+.sideline-video-root .video-tabular {
   font-variant-numeric: tabular-nums;
 }

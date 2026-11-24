@@ -30,7 +30,13 @@ async function baueClientCss() {
     base: ROOT_DIR,
     onDependency() {},
   });
-  const ausgabe = compiler.build(kandidaten);
+  let ausgabe = compiler.build(kandidaten);
+  ausgabe = ausgabe
+    .replaceAll(':root, :host {', '.sideline-video-root {')
+    .replaceAll(
+      '*, ::before, ::after, ::backdrop {',
+      '.sideline-video-root *, .sideline-video-root ::before, .sideline-video-root ::after, .sideline-video-root ::backdrop {'
+    );
   await fs.writeFile(path.join(DIST_DIR, 'client.css'), ausgabe, 'utf8');
   return Buffer.byteLength(ausgabe, 'utf8');
 }

@@ -40,8 +40,12 @@ function VideoImportPrimaerAktion({
       onClick={() => setUploadModalOffen(true)}
       className={className}
     >
-      <Upload className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
-      {t('importAction')}
+      <span className="sideline-video-root">
+        <span className="inline-flex items-center">
+          <Upload className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
+          {t('importAction')}
+        </span>
+      </span>
     </button>
   );
 }
@@ -54,7 +58,7 @@ function VideoMainShell({ ctx }: { ctx: PluginLaufzeitKontext }) {
   }, [ctx.team.id, ctx.gewaehlteSaison, ctx.benutzer.uuid, ladeBasisDaten]);
 
   return (
-    <>
+    <div className="sideline-video-root">
       {ctx.aktuellerTab === 'film-room' ? (
         <FilmRoomView ctx={ctx} />
       ) : ctx.aktuellerTab === 'sync-cut' && ctx.aktiveTeamAnsicht !== 'PLAYER' ? (
@@ -65,7 +69,7 @@ function VideoMainShell({ ctx }: { ctx: PluginLaufzeitKontext }) {
         <DashboardView ctx={ctx} />
       )}
       <UploadPanel ctx={ctx} />
-    </>
+    </div>
   );
 }
 
@@ -88,7 +92,9 @@ const plugin: SidelinePlugin = {
   PrimaerAktion: VideoImportPrimaerAktion,
   renderMainView: (ctx) => <VideoMainShell ctx={ctx} />,
   renderPublicShareView: ({ token, locale, onSchliessen }) => (
-    <PublicShareView token={token} locale={locale} onSchliessen={onSchliessen} />
+    <div className="sideline-video-root">
+      <PublicShareView token={token} locale={locale} onSchliessen={onSchliessen} />
+    </div>
   ),
   settingsPanels: {
     user: VideoUserSettingsPanel,
