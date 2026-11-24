@@ -19,9 +19,9 @@ jobs:
       - name: Abhängigkeiten installieren
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --omit=peer
+            npm ci --include=dev --legacy-peer-deps
           else
-            npm install --omit=peer --no-audit --no-fund
+            npm install --include=dev --legacy-peer-deps --no-audit --no-fund
           fi
       - run: npm run lint
       - run: npm test

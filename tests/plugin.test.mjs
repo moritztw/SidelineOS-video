@@ -140,11 +140,11 @@ test('Release-Packaging erzeugt valides USTAR .tar.gz inkl. dist/ und migrations
   ]);
 });
 
-test('Release-Workflow installiert ohne peerDependencies (--omit=peer)', async () => {
+test('Release-Workflow installiert mit --legacy-peer-deps (verhindert E404 auf unveröffentlichtes @sidelineos/plugin-sdk)', async () => {
   const workflow = await fs.readFile(
     path.join(ROOT_DIR, '.github/workflows/release.yml'),
     'utf8'
   );
-  assert.match(workflow, /npm ci --omit=peer/);
-  assert.match(workflow, /npm install --omit=peer/);
+  assert.match(workflow, /npm ci --include=dev --legacy-peer-deps/);
+  assert.match(workflow, /npm install --include=dev --legacy-peer-deps/);
 });
