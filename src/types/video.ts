@@ -188,8 +188,7 @@ export type HotkeyAktion =
   | 'toggleFullscreen'
   | 'addNote'
   | 'toggleDraw'
-  | 'markIn'
-  | 'markOut'
+  | 'markCut'
   | 'fastCutReverse'
   | 'fastCutPause'
   | 'fastCutForward';

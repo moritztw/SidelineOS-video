@@ -8,6 +8,7 @@ import {
   HOTKEY_AKTION_LABELS,
   STANDARD_HOTKEYS,
   aktualisiereBenutzerHotkey,
+  bereinigeHotkeyBelegung,
   formatiereHotkeyAnzeige,
 } from '../services/frameAndHotkeys';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
@@ -35,7 +36,12 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
   useEffect(() => {
     videoApi
       .holePraeferenzen(ctx.team.id)
-      .then((res) => setPrefs(res.prefs))
+      .then((res) =>
+        setPrefs({
+          ...res.prefs,
+          hotkeys: bereinigeHotkeyBelegung(res.prefs.hotkeys),
+        })
+      )
       .catch(() => undefined);
   }, [ctx.team.id]);
 

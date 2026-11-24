@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
 import type {
   Punkt2D,
   TelestrationElement,
@@ -15,6 +15,8 @@ interface TelestrationCanvasProps {
   onChange: (next: TelestrationElement[]) => void;
 }
 
+type Groesse = { width: number; height: number };
+
 type DragZustand =
   | { typ: 'neu'; start: Punkt2D; elementId: string }
   | { typ: 'verschieben'; id: string; letzterPunkt: Punkt2D }
@@ -25,41 +27,55 @@ function clamp01(val: number): number {
   return Math.max(0, Math.min(1, val));
 }
 
-function abstand(a: Punkt2D, b: Punkt2D): number {
+function abstandPx(a: Punkt2D, b: Punkt2D): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function trefferTest(el: TelestrationElement, p: Punkt2D): boolean {
+function zuPx(p: Punkt2D, groesse: Groesse): Punkt2D {
+  return { x: p.x * groesse.width, y: p.y * groesse.height };
+}
+
+function trefferTestPx(el: TelestrationElement, pPx: Punkt2D, groesse: Groesse): boolean {
+  const minDim = Math.min(groesse.width, groesse.height);
   switch (el.type) {
-    case 'spotlight':
-      return abstand(el.center, p) <= Math.max(el.radius, 0.04);
+    case 'spotlight': {
+      const c = zuPx(el.center, groesse);
+      return abstandPx(c, pPx) <= Math.max(el.radius * minDim, 18);
+    }
     case 'circle': {
-      const dx = (p.x - el.center.x) / Math.max(el.radiusX, 0.03);
-      const dy = (p.y - el.center.y) / Math.max(el.radiusY, 0.03);
+      const c = zuPx(el.center, groesse);
+      const rx = Math.max(el.radiusX * groesse.width, 14);
+      const ry = Math.max(el.radiusY * groesse.height, 14);
+      const dx = (pPx.x - c.x) / rx;
+      const dy = (pPx.y - c.y) / ry;
       return dx * dx + dy * dy <= 1.25;
     }
     case 'arrow': {
-      const len = abstand(el.start, el.end);
-      if (len < 0.001) return abstand(el.start, p) < 0.03;
+      const s = zuPx(el.start, groesse);
+      const e = zuPx(el.end, groesse);
+      const len = abstandPx(s, e);
+      if (len < 1) return abstandPx(s, pPx) < 14;
       const t = Math.max(
         0,
         Math.min(
           1,
-          ((p.x - el.start.x) * (el.end.x - el.start.x) +
-            (p.y - el.start.y) * (el.end.y - el.start.y)) /
-            (len * len)
+          ((pPx.x - s.x) * (e.x - s.x) + (pPx.y - s.y) * (e.y - s.y)) / (len * len)
         )
       );
-      const proj = {
-        x: el.start.x + t * (el.end.x - el.start.x),
-        y: el.start.y + t * (el.end.y - el.start.y),
-      };
-      return abstand(p, proj) <= 0.03;
+      const proj = { x: s.x + t * (e.x - s.x), y: s.y + t * (e.y - s.y) };
+      return abstandPx(pPx, proj) <= 14;
     }
-    case 'text':
-      return Math.abs(p.x - el.position.x) <= 0.14 && Math.abs(p.y - el.position.y) <= 0.05;
+    case 'text': {
+      const pos = zuPx(el.position, groesse);
+      return (
+        pPx.x >= pos.x - 10 &&
+        pPx.x <= pos.x + 220 &&
+        pPx.y >= pos.y - 10 &&
+        pPx.y <= pos.y + 48
+      );
+    }
     case 'freehand':
-      return el.points.some((pt) => abstand(pt, p) <= 0.03);
+      return el.points.some((pt) => abstandPx(zuPx(pt, groesse), pPx) <= 14);
   }
 }
 
@@ -72,39 +88,65 @@ export function TelestrationCanvas({
   onSelect,
   onChange,
 }: TelestrationCanvasProps) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const [drag, setDrag] = useState<DragZustand | null>(null);
-  const [textEingabe, setTextEingabe] = useState<{ pos: Punkt2D; wert: string } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const maskId = `sideline-spotlight-${useId().replace(/:/g, '')}`;
 
-  const holeNormalisiert = (e: PointerEvent<SVGSVGElement>): Punkt2D => {
-    const rect = svgRef.current?.getBoundingClientRect();
+  const [groesse, setGroesse] = useState<Groesse>({ width: 1280, height: 720 });
+  const [drag, setDrag] = useState<DragZustand | null>(null);
+  const [textEingabe, setTextEingabe] = useState<{
+    pos: Punkt2D;
+    wert: string;
+    editId?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setGroesse({ width: Math.round(rect.width), height: Math.round(rect.height) });
+      }
+    };
+    update();
+    const obs = new ResizeObserver(update);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const holeNormalisiert = (clientX: number, clientY: number): Punkt2D => {
+    const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return { x: 0.5, y: 0.5 };
     return {
-      x: clamp01((e.clientX - rect.left) / rect.width),
-      y: clamp01((e.clientY - rect.top) / rect.height),
+      x: clamp01((clientX - rect.left) / rect.width),
+      y: clamp01((clientY - rect.top) / rect.height),
     };
   };
 
-  const handlePointerDown = (e: PointerEvent<SVGSVGElement>) => {
+  const handleContainerPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (readOnly) return;
-    const p = holeNormalisiert(e);
+    // Eingabefeld-Klicks nicht abfangen
+    if ((e.target as HTMLElement).closest('[data-telestration-input="true"]')) return;
+
+    const p = holeNormalisiert(e.clientX, e.clientY);
+    const pPx = zuPx(p, groesse);
 
     if (werkzeug === 'select') {
       const selektiert = elements.find((el) => el.id === selectedId);
       if (selektiert && selektiert.type === 'arrow') {
-        if (abstand(selektiert.start, p) <= 0.028) {
+        if (abstandPx(zuPx(selektiert.start, groesse), pPx) <= 14) {
           setDrag({ typ: 'pfeil_start', id: selektiert.id });
           e.currentTarget.setPointerCapture(e.pointerId);
           return;
         }
-        if (abstand(selektiert.end, p) <= 0.028) {
+        if (abstandPx(zuPx(selektiert.end, groesse), pPx) <= 14) {
           setDrag({ typ: 'pfeil_ende', id: selektiert.id });
           e.currentTarget.setPointerCapture(e.pointerId);
           return;
         }
       }
 
-      const treffer = [...elements].reverse().find((el) => trefferTest(el, p));
+      const treffer = [...elements].reverse().find((el) => trefferTestPx(el, pPx, groesse));
       if (treffer) {
         onSelect(treffer.id);
         setDrag({ typ: 'verschieben', id: treffer.id, letzterPunkt: p });
@@ -146,9 +188,9 @@ export function TelestrationCanvas({
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: PointerEvent<SVGSVGElement>) => {
+  const handleContainerPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     if (!drag || readOnly) return;
-    const p = holeNormalisiert(e);
+    const p = holeNormalisiert(e.clientX, e.clientY);
 
     if (drag.typ === 'pfeil_start') {
       onChange(
@@ -177,10 +219,6 @@ export function TelestrationCanvas({
           if (el.id !== drag.id) return el;
           switch (el.type) {
             case 'spotlight':
-              return {
-                ...el,
-                center: { x: clamp01(el.center.x + dx), y: clamp01(el.center.y + dy) },
-              };
             case 'circle':
               return {
                 ...el,
@@ -211,7 +249,7 @@ export function TelestrationCanvas({
       return;
     }
 
-    // Neu zeichnen
+    const minDim = Math.min(groesse.width, groesse.height);
     onChange(
       elements.map((el) => {
         if (el.id !== drag.elementId) return el;
@@ -229,9 +267,10 @@ export function TelestrationCanvas({
           };
         }
         if (el.type === 'spotlight') {
+          const distPx = abstandPx(zuPx(drag.start, groesse), zuPx(p, groesse));
           return {
             ...el,
-            radius: Math.max(0.03, abstand(drag.start, p)),
+            radius: Math.max(0.03, distPx / Math.max(1, minDim)),
           };
         }
         return el;
@@ -239,38 +278,82 @@ export function TelestrationCanvas({
     );
   };
 
-  const handlePointerUp = () => {
+  const handleContainerPointerUp = () => {
     setDrag(null);
   };
 
+  const uebernehmeText = () => {
+    if (!textEingabe) return;
+    const bereinigt = textEingabe.wert.trim();
+    if (textEingabe.editId) {
+      if (bereinigt) {
+        onChange(
+          elements.map((el) =>
+            el.id === textEingabe.editId && el.type === 'text'
+              ? { ...el, text: bereinigt }
+              : el
+          )
+        );
+      } else {
+        onChange(elements.filter((el) => el.id !== textEingabe.editId));
+      }
+    } else if (bereinigt) {
+      const id = `txt-${Date.now()}`;
+      onChange([
+        ...elements,
+        {
+          id,
+          type: 'text',
+          color: farbe,
+          strokeWidth: 0.002,
+          position: textEingabe.pos,
+          text: bereinigt,
+        },
+      ]);
+      onSelect(id);
+    }
+    setTextEingabe(null);
+  };
+
+  const minDim = Math.min(groesse.width, groesse.height);
   const spotlights = elements.filter((el) => el.type === 'spotlight');
+  const textBoxen = elements.filter((el) => el.type === 'text');
 
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div
+      ref={containerRef}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={handleContainerPointerMove}
+      onPointerUp={handleContainerPointerUp}
+      className={`absolute inset-0 ${
+        readOnly
+          ? 'pointer-events-none'
+          : werkzeug === 'select'
+            ? 'pointer-events-auto cursor-default'
+            : 'pointer-events-auto cursor-crosshair'
+      }`}
+    >
+      {/* Isotropes Pixel-SVG ohne Seitenverhältnis-Streckung */}
       <svg
-        ref={svgRef}
-        viewBox="0 0 1 1"
-        preserveAspectRatio="none"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        className={`h-full w-full ${
-          readOnly ? 'pointer-events-none' : 'pointer-events-auto cursor-crosshair'
-        }`}
+        viewBox={`0 0 ${groesse.width} ${groesse.height}`}
+        className="h-full w-full block select-none"
       >
         <defs>
           {spotlights.length > 0 && (
-            <mask id="sideline-spotlight-mask">
-              <rect x="0" y="0" width="1" height="1" fill="white" />
-              {spotlights.map((sp) => (
-                <circle
-                  key={sp.id}
-                  cx={sp.center.x}
-                  cy={sp.center.y}
-                  r={sp.radius}
-                  fill="black"
-                />
-              ))}
+            <mask id={maskId}>
+              <rect x="0" y="0" width={groesse.width} height={groesse.height} fill="white" />
+              {spotlights.map((sp) => {
+                const c = zuPx(sp.center, groesse);
+                return (
+                  <circle
+                    key={sp.id}
+                    cx={c.x}
+                    cy={c.y}
+                    r={sp.radius * minDim}
+                    fill="black"
+                  />
+                );
+              })}
             </mask>
           )}
         </defs>
@@ -279,18 +362,24 @@ export function TelestrationCanvas({
           <rect
             x="0"
             y="0"
-            width="1"
-            height="1"
+            width={groesse.width}
+            height={groesse.height}
             fill="rgba(0,0,0,0.58)"
-            mask="url(#sideline-spotlight-mask)"
+            mask={`url(#${maskId})`}
           />
         )}
 
         {elements.map((el) => {
+          if (el.type === 'text') return null;
           const istSelektiert = el.id === selectedId && !readOnly;
+          const strokePx = Math.max(2, Math.round(el.strokeWidth * minDim * 1.4));
+
           if (el.type === 'freehand') {
             const d = el.points
-              .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`)
+              .map((pt, i) => {
+                const px = zuPx(pt, groesse);
+                return `${i === 0 ? 'M' : 'L'} ${px.x.toFixed(1)} ${px.y.toFixed(1)}`;
+              })
               .join(' ');
             return (
               <path
@@ -298,44 +387,46 @@ export function TelestrationCanvas({
                 d={d}
                 fill="none"
                 stroke={el.color}
-                strokeWidth={el.strokeWidth}
+                strokeWidth={strokePx}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                opacity={istSelektiert ? 0.85 : 1}
+                opacity={istSelektiert ? 0.8 : 1}
               />
             );
           }
 
           if (el.type === 'arrow') {
-            const angle = Math.atan2(el.end.y - el.start.y, el.end.x - el.start.x);
-            const headLen = 0.025;
+            const s = zuPx(el.start, groesse);
+            const e = zuPx(el.end, groesse);
+            const angle = Math.atan2(e.y - s.y, e.x - s.x);
+            const headLen = Math.max(12, strokePx * 3.4);
             const p1 = {
-              x: el.end.x - headLen * Math.cos(angle - Math.PI / 6),
-              y: el.end.y - headLen * Math.sin(angle - Math.PI / 6),
+              x: e.x - headLen * Math.cos(angle - Math.PI / 6),
+              y: e.y - headLen * Math.sin(angle - Math.PI / 6),
             };
             const p2 = {
-              x: el.end.x - headLen * Math.cos(angle + Math.PI / 6),
-              y: el.end.y - headLen * Math.sin(angle + Math.PI / 6),
+              x: e.x - headLen * Math.cos(angle + Math.PI / 6),
+              y: e.y - headLen * Math.sin(angle + Math.PI / 6),
             };
             return (
               <g key={el.id}>
                 <line
-                  x1={el.start.x}
-                  y1={el.start.y}
-                  x2={el.end.x}
-                  y2={el.end.y}
+                  x1={s.x}
+                  y1={s.y}
+                  x2={e.x}
+                  y2={e.y}
                   stroke={el.color}
-                  strokeWidth={el.strokeWidth}
+                  strokeWidth={strokePx}
                   strokeLinecap="round"
                 />
                 <polygon
-                  points={`${el.end.x},${el.end.y} ${p1.x},${p1.y} ${p2.x},${p2.y}`}
+                  points={`${e.x},${e.y} ${p1.x},${p1.y} ${p2.x},${p2.y}`}
                   fill={el.color}
                 />
                 {istSelektiert && (
                   <>
-                    <circle cx={el.start.x} cy={el.start.y} r="0.012" fill="#FFFFFF" stroke="#0B0E11" strokeWidth="0.003" />
-                    <circle cx={el.end.x} cy={el.end.y} r="0.012" fill="#F59E0B" stroke="#0B0E11" strokeWidth="0.003" />
+                    <circle cx={s.x} cy={s.y} r={6} fill="#FFFFFF" stroke="#0B0E11" strokeWidth={2} />
+                    <circle cx={e.x} cy={e.y} r={6} fill="#F59E0B" stroke="#0B0E11" strokeWidth={2} />
                   </>
                 )}
               </g>
@@ -343,59 +434,82 @@ export function TelestrationCanvas({
           }
 
           if (el.type === 'circle') {
+            const c = zuPx(el.center, groesse);
             return (
               <ellipse
                 key={el.id}
-                cx={el.center.x}
-                cy={el.center.y}
-                rx={el.radiusX}
-                ry={el.radiusY}
+                cx={c.x}
+                cy={c.y}
+                rx={el.radiusX * groesse.width}
+                ry={el.radiusY * groesse.height}
                 fill="none"
                 stroke={el.color}
-                strokeWidth={el.strokeWidth}
-                strokeDasharray={istSelektiert ? '0.012 0.008' : undefined}
+                strokeWidth={strokePx}
+                strokeDasharray={istSelektiert ? '8 6' : undefined}
               />
             );
           }
 
-          if (el.type === 'spotlight') {
-            return (
-              <circle
-                key={el.id}
-                cx={el.center.x}
-                cy={el.center.y}
-                r={el.radius}
-                fill="none"
-                stroke={istSelektiert ? '#FFFFFF' : el.color}
-                strokeWidth={el.strokeWidth}
-              />
-            );
-          }
-
+          const c = zuPx(el.center, groesse);
           return (
-            <text
+            <circle
               key={el.id}
-              x={el.position.x}
-              y={el.position.y}
-              fill={el.color}
-              fontSize="0.036"
-              fontWeight="700"
-              stroke="#0B0E11"
-              strokeWidth="0.002"
-              paintOrder="stroke"
-            >
-              {el.text}
-            </text>
+              cx={c.x}
+              cy={c.y}
+              r={el.radius * minDim}
+              fill="none"
+              stroke={istSelektiert ? '#FFFFFF' : el.color}
+              strokeWidth={strokePx}
+            />
           );
         })}
       </svg>
 
+      {/* Text immer als unverzerrte HTML-Textbox */}
+      {textBoxen.map((el) => {
+        const istSelektiert = el.id === selectedId && !readOnly;
+        return (
+          <div
+            key={el.id}
+            onPointerDown={(e) => {
+              if (readOnly || werkzeug !== 'select') return;
+              e.stopPropagation();
+              onSelect(el.id);
+              const p = holeNormalisiert(e.clientX, e.clientY);
+              setDrag({ typ: 'verschieben', id: el.id, letzterPunkt: p });
+              containerRef.current?.setPointerCapture(e.pointerId);
+            }}
+            onDoubleClick={(e) => {
+              if (readOnly) return;
+              e.stopPropagation();
+              setTextEingabe({ pos: el.position, wert: el.text, editId: el.id });
+            }}
+            className={`absolute z-10 max-w-[260px] rounded-md border bg-[#0B0E11]/90 px-2.5 py-1 text-xs font-semibold leading-snug shadow-sm backdrop-blur-xs whitespace-pre-wrap break-words ${
+              readOnly
+                ? 'pointer-events-none'
+                : werkzeug === 'select'
+                  ? 'pointer-events-auto cursor-move'
+                  : 'pointer-events-none'
+            } ${istSelektiert ? 'ring-1 ring-white' : ''}`}
+            style={{
+              left: `${Math.min(82, Math.max(1, el.position.x * 100))}%`,
+              top: `${Math.min(86, Math.max(1, el.position.y * 100))}%`,
+              borderColor: el.color,
+              color: el.color,
+            }}
+          >
+            {el.text}
+          </div>
+        );
+      })}
+
       {textEingabe && !readOnly && (
         <div
-          className="pointer-events-auto absolute z-20 flex items-center gap-1 rounded-lg border border-[#F59E0B] bg-[#0B0E11] p-1.5"
+          data-telestration-input="true"
+          className="pointer-events-auto absolute z-30 flex items-center gap-1.5 rounded-lg border border-[#F59E0B] bg-[#0B0E11]/95 p-1.5 shadow-lg"
           style={{
-            left: `${Math.min(72, textEingabe.pos.x * 100)}%`,
-            top: `${Math.min(82, textEingabe.pos.y * 100)}%`,
+            left: `${Math.min(68, textEingabe.pos.x * 100)}%`,
+            top: `${Math.min(80, textEingabe.pos.y * 100)}%`,
           }}
         >
           <input
@@ -404,26 +518,23 @@ export function TelestrationCanvas({
             value={textEingabe.wert}
             onChange={(e) => setTextEingabe({ ...textEingabe, wert: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && textEingabe.wert.trim()) {
-                onChange([
-                  ...elements,
-                  {
-                    id: `txt-${Date.now()}`,
-                    type: 'text',
-                    color: farbe,
-                    strokeWidth: 0.002,
-                    position: textEingabe.pos,
-                    text: textEingabe.wert.trim(),
-                  },
-                ]);
-                setTextEingabe(null);
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                uebernehmeText();
               } else if (e.key === 'Escape') {
                 setTextEingabe(null);
               }
             }}
-            placeholder="Text + Enter"
-            className="w-36 bg-transparent px-1.5 text-xs text-white focus:outline-none"
+            placeholder="Textbox-Text + Enter"
+            className="w-44 bg-transparent px-1.5 text-xs text-white focus:outline-none"
           />
+          <button
+            type="button"
+            onClick={uebernehmeText}
+            className="rounded bg-[#F59E0B] px-2 py-0.5 text-[11px] font-semibold text-[#0B0E11]"
+          >
+            OK
+          </button>
         </div>
       )}
     </div>

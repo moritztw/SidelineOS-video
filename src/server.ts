@@ -9,7 +9,7 @@ import type {
 import sql001 from '../migrations/001_video_schema.sql';
 import manifest from '../plugin.manifest.json';
 import { validiereSidelineBundle } from './services/bundleSchema';
-import { STANDARD_HOTKEYS } from './services/frameAndHotkeys';
+import { STANDARD_HOTKEYS, bereinigeHotkeyBelegung } from './services/frameAndHotkeys';
 import {
   ergaenzeTeamWoerterbuch,
   erstelleStandardTeamSchema,
@@ -249,7 +249,7 @@ export const backendPlugin: SidelineBackendPlugin = {
         body: {
           prefs: {
             userUuid: row.user_uuid,
-            hotkeys: { ...STANDARD_HOTKEYS, ...parseJson(row.hotkeys_json, {}) },
+            hotkeys: bereinigeHotkeyBelegung(parseJson(row.hotkeys_json, {})),
             defaultCorner: row.default_corner ?? 'top-right',
             defaultPlaybackRate: Number(row.default_playback_rate ?? 1),
             autoStopEnabled: Boolean(row.auto_stop_enabled),
@@ -261,7 +261,7 @@ export const backendPlugin: SidelineBackendPlugin = {
 
     if (method === 'PUT' && pfad === '/prefs') {
       const body = (req.body ?? {}) as Partial<BenutzerVideoPraeferenzen>;
-      const hotkeys = { ...STANDARD_HOTKEYS, ...(body.hotkeys ?? {}) };
+      const hotkeys = bereinigeHotkeyBelegung(body.hotkeys);
       const defaultCorner = body.defaultCorner ?? 'top-right';
       const defaultPlaybackRate = Number(body.defaultPlaybackRate ?? 1);
       const autoStopEnabled = body.autoStopEnabled !== false;

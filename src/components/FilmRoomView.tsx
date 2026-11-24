@@ -28,6 +28,7 @@ import {
   STANDARD_HOTKEYS,
   findeUeberfahrenenAutoStopFrame,
   formatiereFrameTimecode,
+  formatiereHotkeyAnzeige,
   frameIndexZuMs,
   hatExaktenFrameTreffer,
   msZuFrameIndex,
@@ -316,14 +317,20 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   };
 
+  useEffect(() => {
+    const onFsChange = () => {
+      setIstVollbild(document.fullscreenElement === stageRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
   const toggleVollbild = async () => {
     if (!stageRef.current) return;
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => undefined);
-      setIstVollbild(false);
     } else {
       await stageRef.current.requestFullscreen().catch(() => undefined);
-      setIstVollbild(true);
     }
   };
 
@@ -510,13 +517,68 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       {/* Video-Bühne inkl. Telestration, Ecken-Overlay & Vollbild-Zeichenleiste */}
       <div
         ref={stageRef}
-        className="overflow-hidden rounded-xl border border-[#232933] bg-[#0B0E11]"
+        className={
+          istVollbild
+            ? 'flex h-screen w-screen flex-col overflow-hidden bg-[#0B0E11]'
+            : 'overflow-hidden rounded-xl border border-[#232933] bg-[#0B0E11]'
+        }
       >
-        <div className="relative aspect-video w-full bg-[#07090C]">
-          {aktiveQuelle?.streamUrl && !videoFehler ? (
-            <video
-              key={`${aktivesPlay.id}-${aktiverWinkel}-${aktiveQuelle.streamUrl}`}
-              ref={videoRef}
+        {istVollbild && (
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#232933] bg-[#13171D] px-4 py-2 text-xs">
+            <div className="flex items-center gap-2 text-[#E6EDF3] video-tabular">
+              <span className="font-semibold text-white">{aktivesReel.title}</span>
+              <span aria-hidden="true">·</span>
+              <span>Play #{aktivesPlay.playNumber}</span>
+              <span aria-hidden="true">·</span>
+              <span>Frame {aktuellerFrame}</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-[#F59E0B]">{formatiereFrameTimecode(aktuelleMs)}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {aktivesReel.angles.map((angle) => {
+                const verfuegbar = Boolean(aktivesPlay.sources[angle]);
+                return (
+                  <button
+                    key={angle}
+                    type="button"
+                    disabled={!verfuegbar}
+                    onClick={() => handleWinkelWechsel(angle)}
+                    className={`rounded px-2.5 py-1 text-xs font-medium ${
+                      aktiverWinkel === angle
+                        ? 'bg-[#F59E0B] text-[#0B0E11]'
+                        : verfuegbar
+                          ? 'text-[#E6EDF3] hover:bg-[#232933]'
+                          : 'cursor-not-allowed text-[#6E7681] opacity-40'
+                    }`}
+                  >
+                    {angle}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div
+          className={
+            istVollbild
+              ? 'flex flex-1 min-h-0 w-full items-center justify-center overflow-hidden bg-[#07090C]'
+              : 'w-full bg-[#07090C]'
+          }
+          style={istVollbild ? { containerType: 'size' } : undefined}
+        >
+          <div
+            className="relative aspect-video w-full bg-[#07090C]"
+            style={
+              istVollbild
+                ? { width: 'min(100cqw, calc(100cqh * 16 / 9))' }
+                : undefined
+            }
+          >
+            {aktiveQuelle?.streamUrl && !videoFehler ? (
+              <video
+                key={`${aktivesPlay.id}-${aktiverWinkel}-${aktiveQuelle.streamUrl}`}
+                ref={videoRef}
               src={aktiveQuelle.streamUrl}
               preload="auto"
               playsInline
@@ -724,117 +786,143 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
             </div>
           )}
+          </div>
         </div>
 
-        {/* Transportleiste */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#232933] bg-[#13171D] px-4 py-2.5">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              title="Vorheriger Spielzug"
-              onClick={() => {
-                const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-                if (idx > 0) handlePlayWechsel(sichtbarePlays[idx - 1].id);
-              }}
-              className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-            >
-              <SkipBack className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              title="-1 Frame (40 ms)"
-              onClick={() => {
+        {/* Transportleiste & Hotkey-Leiste (auch im Vollbild immer sichtbar) */}
+        <div className="shrink-0 border-t border-[#232933] bg-[#13171D]">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                title={`Vorheriger Spielzug (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).prevPlay)})`}
+                onClick={() => {
+                  const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
+                  if (idx > 0) handlePlayWechsel(sichtbarePlays[idx - 1].id);
+                }}
+                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+              >
+                <SkipBack className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                title={`-1 Frame (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepBack)})`}
+                onClick={() => {
+                  setLaeuft(false);
+                  springeZuMs(aktuelleMs - FRAME_MS);
+                }}
+                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                title={`Wiedergabe / Pause (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause)})`}
+                onClick={() => setLaeuft((v) => !v)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
+              >
+                {laeuft ? (
+                  <Pause className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Play className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+              <button
+                type="button"
+                title={`+1 Frame (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepForward)})`}
+                onClick={() => {
+                  setLaeuft(false);
+                  springeZuMs(aktuelleMs + FRAME_MS);
+                }}
+                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                title={`Nächster Spielzug (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).nextPlay)})`}
+                onClick={() => {
+                  const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
+                  if (idx >= 0 && idx < sichtbarePlays.length - 1) {
+                    handlePlayWechsel(sichtbarePlays[idx + 1].id);
+                  }
+                }}
+                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+              >
+                <SkipForward className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <input
+              type="range"
+              min={0}
+              max={Math.max(FRAME_MS, effektiveDauerMs)}
+              step={FRAME_MS}
+              value={Math.min(aktuelleMs, Math.max(FRAME_MS, effektiveDauerMs))}
+              onChange={(e) => {
                 setLaeuft(false);
-                springeZuMs(aktuelleMs - FRAME_MS);
+                springeZuMs(Number(e.target.value));
               }}
-              className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setLaeuft((v) => !v)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
-            >
-              {laeuft ? (
-                <Pause className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Play className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
-            <button
-              type="button"
-              title="+1 Frame (40 ms)"
-              onClick={() => {
-                setLaeuft(false);
-                springeZuMs(aktuelleMs + FRAME_MS);
-              }}
-              className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              title="Nächster Spielzug"
-              onClick={() => {
-                const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-                if (idx >= 0 && idx < sichtbarePlays.length - 1) {
-                  handlePlayWechsel(sichtbarePlays[idx + 1].id);
-                }
-              }}
-              className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-            >
-              <SkipForward className="h-4 w-4" aria-hidden="true" />
-            </button>
+              className="h-1.5 flex-1 min-w-[160px] accent-[#F59E0B]"
+            />
+
+            <div className="flex items-center gap-2 text-xs">
+              <select
+                aria-label="Wiedergabetempo"
+                value={tempo}
+                onChange={(e) => setTempo(Number(e.target.value))}
+                className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-1 text-xs text-[#E6EDF3] video-tabular"
+              >
+                <option value={0.25}>0.25x</option>
+                <option value={0.5}>0.5x</option>
+                <option value={1}>1.0x</option>
+                <option value={1.5}>1.5x</option>
+                <option value={2}>2.0x</option>
+              </select>
+              <label className="inline-flex items-center gap-1.5 text-[#E6EDF3] whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={autoStop}
+                  onChange={(e) => setAutoStop(e.target.checked)}
+                  className="accent-[#F59E0B]"
+                />
+                {t('autoStop')}
+              </label>
+              <button
+                type="button"
+                onClick={toggleVollbild}
+                title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen)})`}
+                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+              >
+                {istVollbild ? (
+                  <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
 
-          <input
-            type="range"
-            min={0}
-            max={Math.max(FRAME_MS, effektiveDauerMs)}
-            step={FRAME_MS}
-            value={Math.min(aktuelleMs, Math.max(FRAME_MS, effektiveDauerMs))}
-            onChange={(e) => {
-              setLaeuft(false);
-              springeZuMs(Number(e.target.value));
-            }}
-            className="h-1.5 flex-1 min-w-[160px] accent-[#F59E0B]"
-          />
-
-          <div className="flex items-center gap-2 text-xs">
-            <select
-              aria-label="Wiedergabetempo"
-              value={tempo}
-              onChange={(e) => setTempo(Number(e.target.value))}
-              className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-1 text-xs text-[#E6EDF3] video-tabular"
-            >
-              <option value={0.25}>0.25x</option>
-              <option value={0.5}>0.5x</option>
-              <option value={1}>1.0x</option>
-              <option value={1.5}>1.5x</option>
-              <option value={2}>2.0x</option>
-            </select>
-            <label className="inline-flex items-center gap-1.5 text-[#E6EDF3] whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={autoStop}
-                onChange={(e) => setAutoStop(e.target.checked)}
-                className="accent-[#F59E0B]"
-              />
-              {t('autoStop')}
-            </label>
-            <button
-              type="button"
-              onClick={toggleVollbild}
-              title={istVollbild ? t('exitFullscreen') : t('fullscreen')}
-              className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-            >
-              {istVollbild ? (
-                <Minimize2 className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Maximize2 className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
+          {/* Hotkey-Leiste (immer sichtbar für schnelle Tastaturbedienung, besonders im Vollbild) */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 bg-[#0B0E11]/70 px-4 py-1.5 text-[11px] text-[#8B949E]">
+            {[
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause, label: 'Play/Pause' },
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepBack, label: '-1 Frame' },
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepForward, label: '+1 Frame' },
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).prevPlay, label: 'Vorheriger Play' },
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).nextPlay, label: 'Nächster Play' },
+              ...(istCoachOderAdmin
+                ? [{ key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleDraw, label: 'Zeichnen' }]
+                : []),
+              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen, label: 'Vollbild' },
+            ].map((item) => (
+              <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
+                <kbd className="rounded border border-[#232933] bg-[#13171D] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                  {formatiereHotkeyAnzeige(item.key)}
+                </kbd>
+                <span>{item.label}</span>
+              </span>
+            ))}
           </div>
         </div>
       </div>

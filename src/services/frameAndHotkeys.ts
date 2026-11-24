@@ -12,8 +12,7 @@ export const STANDARD_HOTKEYS: HotkeyBelegung = {
   toggleFullscreen: 'KeyF',
   addNote: 'KeyN',
   toggleDraw: 'KeyD',
-  markIn: 'KeyI',
-  markOut: 'KeyO',
+  markCut: 'KeyI',
   fastCutReverse: 'KeyJ',
   fastCutPause: 'KeyK',
   fastCutForward: 'KeyL',
@@ -28,8 +27,7 @@ export const HOTKEY_AKTION_LABELS: Record<HotkeyAktion, { de: string; en: string
   toggleFullscreen: { de: 'Vollbild umschalten', en: 'Toggle Fullscreen' },
   addNote: { de: 'Coach-Notiz am Frame', en: 'Add Coach Note at Frame' },
   toggleDraw: { de: 'Zeichenleiste umschalten', en: 'Toggle Telestration Bar' },
-  markIn: { de: 'Fast-Cut In-Punkt (I)', en: 'Fast-Cut Mark In (I)' },
-  markOut: { de: 'Fast-Cut Out-Punkt (O)', en: 'Fast-Cut Mark Out (O)' },
+  markCut: { de: 'Fast-Cut Schnitt setzen (I)', en: 'Fast-Cut Set Cut (I)' },
   fastCutReverse: { de: 'Fast-Cut Rückwärts (J)', en: 'Fast-Cut Reverse (J)' },
   fastCutPause: { de: 'Fast-Cut Pause (K)', en: 'Fast-Cut Pause (K)' },
   fastCutForward: { de: 'Fast-Cut Vorwärts (L)', en: 'Fast-Cut Forward (L)' },
@@ -172,5 +170,50 @@ export function aktualisiereBenutzerHotkey(
       ...aktuelleBelegung,
       [aktion]: neueTaste,
     },
+  };
+}
+
+/**
+ * Migriert alte In/Out-Hotkey-Belegungen sauber auf das aktuelle Ein-Punkt-Schnitt-Schema.
+ */
+export function bereinigeHotkeyBelegung(
+  roh: Partial<Record<string, string>> | null | undefined
+): HotkeyBelegung {
+  const ergebnis: HotkeyBelegung = { ...STANDARD_HOTKEYS };
+  if (!roh || typeof roh !== 'object') return ergebnis;
+
+  for (const aktion of Object.keys(STANDARD_HOTKEYS) as HotkeyAktion[]) {
+    const wert =
+      aktion === 'markCut'
+        ? roh.markCut ?? roh.markIn
+        : roh[aktion];
+    if (typeof wert === 'string' && wert.trim()) {
+      ergebnis[aktion] = normalisiereTaste(wert);
+    }
+  }
+  return ergebnis;
+}
+
+/**
+ * Berechnet Position und Restdauer innerhalb des aktiven ungeschnittenen Videoabschnitts [cutStartMs .. totalDauerMs].
+ */
+export function berechneRestclipZeit(
+  absoluteMs: number,
+  cutStartMs: number,
+  totalDauerMs: number
+): {
+  startMs: number;
+  dauerMs: number;
+  relativMs: number;
+  geclamptAbsMs: number;
+} {
+  const startMs = Math.max(0, Math.round(cutStartMs / FRAME_MS) * FRAME_MS);
+  const endeMs = Math.max(startMs + FRAME_MS, Math.round(totalDauerMs / FRAME_MS) * FRAME_MS);
+  const geclamptAbsMs = Math.max(startMs, Math.min(endeMs, Math.round(absoluteMs / FRAME_MS) * FRAME_MS));
+  return {
+    startMs,
+    dauerMs: Math.max(FRAME_MS, endeMs - startMs),
+    relativMs: Math.max(0, geclamptAbsMs - startMs),
+    geclamptAbsMs,
   };
 }

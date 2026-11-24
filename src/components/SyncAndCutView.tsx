@@ -6,21 +6,36 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   Scissors,
   SlidersHorizontal,
+  Undo2,
 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
 import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
 import { videoApi } from '../services/apiClient';
 import {
   FRAME_MS,
-  STANDARD_HOTKEYS,
+  berechneRestclipZeit,
+  bereinigeHotkeyBelegung,
   formatiereFrameTimecode,
+  formatiereHotkeyAnzeige,
   normalisiereTaste,
 } from '../services/frameAndHotkeys';
 import { analysierePlaySyncStatus } from '../services/smartPlaylistEngine';
+
+interface SessionSchnittEintrag {
+  playId: string;
+  playNumber: number;
+  winkel: string;
+  startMs: number;
+  endMs: number;
+  warInitialPlatzhalter?: boolean;
+  vorherEndMs?: number;
+}
 
 export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
@@ -29,8 +44,11 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const masterVideoRef = useRef<HTMLVideoElement | null>(null);
   const slaveVideoRef = useRef<HTMLVideoElement | null>(null);
   const fastCutVideoRef = useRef<HTMLVideoElement | null>(null);
+  const syncStageRef = useRef<HTMLDivElement | null>(null);
+  const fastCutStageRef = useRef<HTMLDivElement | null>(null);
 
   const [modus, setModus] = useState<'SYNC' | 'FAST_CUT'>('SYNC');
+  const [istVollbild, setIstVollbild] = useState(false);
   const [aktivesPlayId, setAktivesPlayId] = useState<string | null>(
     aktivePlays[0]?.id ?? null
   );
@@ -41,14 +59,19 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const [syncPosMs, setSyncPosMs] = useState(0);
   const [syncDauerMs, setSyncDauerMs] = useState(15000);
 
-  // Fast-Cut-State
+  // Fast-Cut-State (Ein-Punkt-Schnitt ab cutStartMs bis Videoende)
   const [fastCutWinkel, setFastCutWinkel] = useState<string>('SIDELINE');
+  const [cutStartMs, setCutStartMs] = useState(0);
   const [tapePosMs, setTapePosMs] = useState(0);
   const [tapeDauerMs, setTapeDauerMs] = useState(120000);
   const [tapeSpeed, setTapeSpeed] = useState<number>(0); // -4, -2, 0, 1, 2, 4 (J/K/L)
-  const [inMs, setInMs] = useState<number | null>(null);
-  const [outMs, setOutMs] = useState<number | null>(null);
+  const [sessionCuts, setSessionCuts] = useState<SessionSchnittEintrag[]>([]);
   const [statusHinweis, setStatusHinweis] = useState<string | null>(null);
+
+  const hotkeys = useMemo(
+    () => bereinigeHotkeyBelegung(userPrefs?.hotkeys),
+    [userPrefs?.hotkeys]
+  );
 
   const aktivesPlay = useMemo(
     () => aktivePlays.find((p) => p.id === aktivesPlayId) ?? aktivePlays[0] ?? null,
@@ -90,6 +113,43 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setSyncPosMs(0);
   }, [aktivesPlay?.id, masterQuelle?.streamUrl]);
 
+  // Bei Reel- oder Winkel-Wechsel im Fast-Cut sauber auf Restclip zurücksetzen
+  useEffect(() => {
+    setSessionCuts([]);
+    setTapeSpeed(0);
+    // Wenn bereits mehrere Time-Slices für diesen Winkel existieren, beim letzten Schnitt fortsetzen
+    const vorhandeneSlices = aktivePlays
+      .map((p) => p.sources[fastCutWinkel])
+      .filter((s) => s && s.sourceMode === 'TIME_SLICE');
+    if (vorhandeneSlices.length > 1) {
+      const maxEnd = Math.max(...vorhandeneSlices.map((s) => s?.endMs ?? 0));
+      setCutStartMs(maxEnd);
+      setTapePosMs(maxEnd);
+    } else {
+      setCutStartMs(0);
+      setTapePosMs(0);
+    }
+  }, [aktivesReel?.id, fastCutWinkel]);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const target = modus === 'SYNC' ? syncStageRef.current : fastCutStageRef.current;
+      setIstVollbild(Boolean(target && document.fullscreenElement === target));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [modus]);
+
+  const toggleVollbild = async () => {
+    const target = modus === 'SYNC' ? syncStageRef.current : fastCutStageRef.current;
+    if (!target) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+    } else {
+      await target.requestFullscreen().catch(() => undefined);
+    }
+  };
+
   // Echte Sync-Video-Wiedergabe (Master + Sekundär parallel)
   useEffect(() => {
     if (modus !== 'SYNC') return;
@@ -109,7 +169,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       masterEl?.pause();
       slaveEl?.pause();
     }
-  }, [modus, syncLaeuft, aktivesPlay?.id, sekundaerWinkel, masterQuelle?.streamUrl, slaveQuelle?.streamUrl]);
+  }, [
+    modus,
+    syncLaeuft,
+    aktivesPlay?.id,
+    sekundaerWinkel,
+    masterQuelle?.streamUrl,
+    slaveQuelle?.streamUrl,
+  ]);
 
   useEffect(() => {
     if (modus !== 'SYNC' || !syncLaeuft) return;
@@ -147,19 +214,22 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   };
 
-  // Echte Fast-Cut-Videosteuerung (J / K / L)
+  // Echte Fast-Cut-Videosteuerung (J / K / L) begrenzt auf Restclip ab cutStartMs
   useEffect(() => {
     if (modus !== 'FAST_CUT') return;
     const videoEl = fastCutVideoRef.current;
     if (!videoEl || !fastCutQuelle?.streamUrl) return;
 
     if (tapeSpeed > 0) {
+      if (videoEl.readyState >= 1 && videoEl.currentTime * 1000 < cutStartMs) {
+        videoEl.currentTime = cutStartMs / 1000;
+      }
       videoEl.playbackRate = tapeSpeed;
       videoEl.play().catch(() => undefined);
     } else {
       videoEl.pause();
     }
-  }, [modus, tapeSpeed, fastCutQuelle?.streamUrl]);
+  }, [modus, tapeSpeed, cutStartMs, fastCutQuelle?.streamUrl]);
 
   useEffect(() => {
     if (modus !== 'FAST_CUT' || tapeSpeed === 0) return;
@@ -167,18 +237,22 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       const videoEl = fastCutVideoRef.current;
       if (tapeSpeed > 0 && videoEl && fastCutQuelle?.streamUrl) {
         if (videoEl.readyState >= 2 && !videoEl.paused) {
-          setTapePosMs(Math.round(videoEl.currentTime * 1000));
+          const ms = Math.max(cutStartMs, Math.round(videoEl.currentTime * 1000));
+          setTapePosMs(ms);
         }
         if (videoEl.ended) {
           setTapeSpeed(0);
         }
       } else {
         setTapePosMs((alt) => {
-          const next = Math.max(0, Math.min(tapeDauerMs, alt + tapeSpeed * FRAME_MS * 2));
+          const next = Math.max(
+            cutStartMs,
+            Math.min(tapeDauerMs, alt + tapeSpeed * FRAME_MS * 2)
+          );
           if (videoEl && videoEl.readyState >= 1) {
             videoEl.currentTime = next / 1000;
           }
-          if (next <= 0 && tapeSpeed < 0) {
+          if (next <= cutStartMs && tapeSpeed < 0) {
             setTapeSpeed(0);
           }
           return next;
@@ -186,44 +260,229 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       }
     }, FRAME_MS);
     return () => window.clearInterval(id);
-  }, [modus, tapeSpeed, fastCutQuelle?.streamUrl, tapeDauerMs]);
+  }, [modus, tapeSpeed, cutStartMs, fastCutQuelle?.streamUrl, tapeDauerMs]);
 
   const springeFastCutMs = (zielMs: number) => {
-    const geclampt = Math.max(0, Math.min(tapeDauerMs, Math.round(zielMs / FRAME_MS) * FRAME_MS));
-    setTapePosMs(geclampt);
+    const rest = berechneRestclipZeit(zielMs, cutStartMs, tapeDauerMs);
+    setTapePosMs(rest.geclamptAbsMs);
     if (fastCutVideoRef.current && fastCutVideoRef.current.readyState >= 1) {
-      fastCutVideoRef.current.currentTime = geclampt / 1000;
+      fastCutVideoRef.current.currentTime = rest.geclamptAbsMs / 1000;
     }
   };
 
-  // Fast-Cut Tastenkürzel (I / O / J-K-L)
+  const setzeEinPunktSchnitt = async () => {
+    if (!aktivesReel) return;
+    const zielEndMs = Math.round(tapePosMs / FRAME_MS) * FRAME_MS;
+    if (zielEndMs <= cutStartMs + FRAME_MS) {
+      setStatusHinweis('Schnitt-Position muss hinter dem aktuellen Clip-Beginn liegen.');
+      return;
+    }
+    const basisSrc = fastCutQuelle ?? masterQuelle;
+    const zielWinkel = basisSrc?.angleCode ?? fastCutWinkel;
+
+    // Prüfen, ob Play #1 noch der ungeschnittene Upload-Platzhalter [0 .. volle Länge] ist
+    const ersterPlay = aktivePlays[0];
+    const ersterSrc = ersterPlay?.sources[zielWinkel];
+    const istInitialPlatzhalter =
+      aktivePlays.length === 1 &&
+      sessionCuts.length === 0 &&
+      cutStartMs === 0 &&
+      ersterSrc?.sourceMode === 'TIME_SLICE' &&
+      ersterSrc.startMs === 0;
+
+    if (istInitialPlatzhalter && ersterPlay && ersterSrc) {
+      const vorherEndMs = ersterSrc.endMs;
+      await videoApi.aktualisierePlay(ctx.team.id, ersterPlay.id, {
+        angleOffsets: {
+          [zielWinkel]: {
+            startMs: 0,
+            endMs: zielEndMs,
+            offsetMs: null,
+          },
+        },
+      });
+      aktualisierePlaysLokal((alt) =>
+        alt.map((p) =>
+          p.id === ersterPlay.id
+            ? {
+                ...p,
+                sources: {
+                  ...p.sources,
+                  [zielWinkel]: { ...ersterSrc, startMs: 0, endMs: zielEndMs },
+                },
+              }
+            : p
+        )
+      );
+      setSessionCuts((alt) => [
+        ...alt,
+        {
+          playId: ersterPlay.id,
+          playNumber: ersterPlay.playNumber,
+          winkel: zielWinkel,
+          startMs: 0,
+          endMs: zielEndMs,
+          warInitialPlatzhalter: true,
+          vorherEndMs,
+        },
+      ]);
+      setCutStartMs(zielEndMs);
+      setTapePosMs(zielEndMs);
+      setStatusHinweis(
+        `Spielzug #${ersterPlay.playNumber} (${formatiereFrameTimecode(0)} – ${formatiereFrameTimecode(zielEndMs)}) geschnitten.`
+      );
+      return;
+    }
+
+    const nextNr = aktivePlays.reduce((m, p) => Math.max(m, p.playNumber), 0) + 1;
+    const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
+      playNumber: nextNr,
+      breakdown: { odk: 'O', play_number: nextNr },
+      sources: basisSrc
+        ? {
+            [zielWinkel]: {
+              fileName: basisSrc.fileName,
+              s3Key: basisSrc.s3Key,
+              sourceMode: 'TIME_SLICE',
+              startMs: cutStartMs,
+              endMs: zielEndMs,
+            },
+          }
+        : undefined,
+    });
+    aktualisierePlaysLokal((alt) => [
+      ...alt,
+      {
+        id: res.id,
+        reelId: aktivesReel.id,
+        playNumber: nextNr,
+        sortOrder: nextNr,
+        breakdown: { odk: 'O', play_number: nextNr },
+        sources: basisSrc
+          ? {
+              [zielWinkel]: {
+                ...basisSrc,
+                id: `ang-${Date.now()}`,
+                sourceMode: 'TIME_SLICE',
+                startMs: cutStartMs,
+                endMs: zielEndMs,
+                offsetMs: null,
+              },
+            }
+          : {},
+      },
+    ]);
+    setSessionCuts((alt) => [
+      ...alt,
+      {
+        playId: res.id,
+        playNumber: nextNr,
+        winkel: zielWinkel,
+        startMs: cutStartMs,
+        endMs: zielEndMs,
+      },
+    ]);
+    setCutStartMs(zielEndMs);
+    setTapePosMs(zielEndMs);
+    setStatusHinweis(
+      `Spielzug #${nextNr} (${formatiereFrameTimecode(cutStartMs)} – ${formatiereFrameTimecode(zielEndMs)}) übernommen.`
+    );
+  };
+
+  const letztenSchnittRueckgaengig = async () => {
+    const letzter = sessionCuts[sessionCuts.length - 1];
+    if (!letzter) return;
+
+    setTapeSpeed(0);
+    if (letzter.warInitialPlatzhalter) {
+      const resetEnd = letzter.vorherEndMs ?? tapeDauerMs;
+      await videoApi.aktualisierePlay(ctx.team.id, letzter.playId, {
+        angleOffsets: {
+          [letzter.winkel]: { startMs: 0, endMs: resetEnd, offsetMs: null },
+        },
+      });
+      aktualisierePlaysLokal((alt) =>
+        alt.map((p) => {
+          if (p.id !== letzter.playId) return p;
+          const src = p.sources[letzter.winkel];
+          if (!src) return p;
+          return {
+            ...p,
+            sources: {
+              ...p.sources,
+              [letzter.winkel]: { ...src, startMs: 0, endMs: resetEnd },
+            },
+          };
+        })
+      );
+    } else {
+      await videoApi.loeschePlay(ctx.team.id, letzter.playId);
+      aktualisierePlaysLokal((alt) => alt.filter((p) => p.id !== letzter.playId));
+    }
+
+    setSessionCuts((alt) => alt.slice(0, -1));
+    setCutStartMs(letzter.startMs);
+    setTapePosMs(letzter.startMs);
+    if (fastCutVideoRef.current && fastCutVideoRef.current.readyState >= 1) {
+      fastCutVideoRef.current.currentTime = letzter.startMs / 1000;
+    }
+    setStatusHinweis(`Schnitt #${letzter.playNumber} rückgängig gemacht.`);
+  };
+
+  // Tastenkürzel für SYNC und FAST_CUT inkl. Vollbild-Hotkey
   useEffect(() => {
-    if (modus !== 'FAST_CUT') return;
-    const hotkeys = userPrefs?.hotkeys ?? STANDARD_HOTKEYS;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       const taste = normalisiereTaste(e.code || e.key);
+
+      if (taste === hotkeys.toggleFullscreen) {
+        e.preventDefault();
+        toggleVollbild();
+        return;
+      }
+
+      if (modus === 'SYNC') {
+        if (taste === hotkeys.playPause) {
+          e.preventDefault();
+          setSyncLaeuft((v) => !v);
+        } else if (taste === hotkeys.stepBack) {
+          e.preventDefault();
+          setSyncLaeuft(false);
+          springeSyncMs(syncPosMs - FRAME_MS);
+        } else if (taste === hotkeys.stepForward) {
+          e.preventDefault();
+          setSyncLaeuft(false);
+          springeSyncMs(syncPosMs + FRAME_MS);
+        }
+        return;
+      }
+
       if (taste === hotkeys.fastCutReverse) {
         e.preventDefault();
         setTapeSpeed((s) => (s <= -2 ? -4 : -2));
-      } else if (taste === hotkeys.fastCutPause) {
+      } else if (taste === hotkeys.fastCutPause || taste === hotkeys.playPause) {
         e.preventDefault();
-        setTapeSpeed(0);
+        setTapeSpeed((s) => (taste === hotkeys.playPause && s === 0 ? 1 : 0));
       } else if (taste === hotkeys.fastCutForward) {
         e.preventDefault();
         setTapeSpeed((s) => (s >= 2 ? 4 : s >= 1 ? 2 : 1));
-      } else if (taste === hotkeys.markIn) {
+      } else if (taste === hotkeys.stepBack) {
         e.preventDefault();
-        setInMs(tapePosMs);
-      } else if (taste === hotkeys.markOut) {
+        setTapeSpeed(0);
+        springeFastCutMs(tapePosMs - FRAME_MS);
+      } else if (taste === hotkeys.stepForward) {
         e.preventDefault();
-        setOutMs(tapePosMs);
+        setTapeSpeed(0);
+        springeFastCutMs(tapePosMs + FRAME_MS);
+      } else if (taste === hotkeys.markCut) {
+        e.preventDefault();
+        setzeEinPunktSchnitt();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [modus, tapePosMs, userPrefs?.hotkeys]);
+  });
 
   if (!aktivesReel || !aktivesPlay) {
     return (
@@ -260,54 +519,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setStatusHinweis(`Offset für ${sekundaerWinkel} auf ${neuerOffsetMs} ms gespeichert.`);
   };
 
-  const erstelleFastCutPlay = async () => {
-    if (inMs === null || outMs === null || outMs <= inMs) {
-      setStatusHinweis('Out-Punkt (O) muss nach dem In-Punkt (I) liegen.');
-      return;
-    }
-    const nextNr = aktivePlays.reduce((m, p) => Math.max(m, p.playNumber), 0) + 1;
-    const basisSrc = fastCutQuelle ?? masterQuelle;
-    const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
-      playNumber: nextNr,
-      breakdown: { odk: 'O', play_number: nextNr },
-      sources: basisSrc
-        ? {
-            [basisSrc.angleCode]: {
-              fileName: basisSrc.fileName,
-              s3Key: basisSrc.s3Key,
-              sourceMode: 'TIME_SLICE',
-              startMs: inMs,
-              endMs: outMs,
-            },
-          }
-        : undefined,
-    });
-    aktualisierePlaysLokal((alt) => [
-      ...alt,
-      {
-        id: res.id,
-        reelId: aktivesReel.id,
-        playNumber: nextNr,
-        sortOrder: nextNr,
-        breakdown: { odk: 'O', play_number: nextNr },
-        sources: basisSrc
-          ? {
-              [basisSrc.angleCode]: {
-                ...basisSrc,
-                id: `ang-${Date.now()}`,
-                sourceMode: 'TIME_SLICE',
-                startMs: inMs,
-                endMs: outMs,
-                offsetMs: null,
-              },
-            }
-          : {},
-      },
-    ]);
-    setInMs(outMs);
-    setOutMs(null);
-    setStatusHinweis(`Spielzug #${nextNr} aus Time-Slice erstellt.`);
-  };
+  const restClip = berechneRestclipZeit(tapePosMs, cutStartMs, tapeDauerMs);
 
   return (
     <section className="space-y-6">
@@ -315,7 +527,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         <div className="space-y-1">
           <h1 className="text-xl font-bold text-white">{t('syncTitle')}</h1>
           <p className="text-xs text-[#8B949E]">
-            {aktivesReel.title} · Dual-Viewport-Abgleich (optionaler Offset) &amp; Fast-Cut
+            {aktivesReel.title} · Dual-Viewport-Abgleich (optionaler Offset) &amp; Ein-Punkt-Fast-Cut
           </p>
         </div>
 
@@ -346,7 +558,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             }`}
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
-            Fast-Cut (I / O / J-K-L)
+            Fast-Cut ({formatiereHotkeyAnzeige(hotkeys.markCut)} / J-K-L)
           </button>
         </div>
       </header>
@@ -360,17 +572,49 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
       {modus === 'SYNC' ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="space-y-4 lg:col-span-8">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Master-Viewport mit echtem Video */}
-              <div className="rounded-xl border border-[#232933] bg-[#13171D] p-3 space-y-2">
-                <div className="flex items-center justify-between text-xs">
+          <div
+            ref={syncStageRef}
+            className={
+              istVollbild
+                ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-[#0B0E11] p-4'
+                : 'space-y-4 lg:col-span-8'
+            }
+          >
+            {istVollbild && (
+              <div className="flex shrink-0 items-center justify-between rounded-lg border border-[#232933] bg-[#13171D] px-4 py-2 text-xs">
+                <span className="font-semibold text-white">
+                  {aktivesReel.title} · Play #{aktivesPlay.playNumber}
+                </span>
+                <span className="font-mono text-[#F59E0B] video-tabular">
+                  {formatiereFrameTimecode(syncPosMs)} · Offset {aktuellerOffset} ms
+                </span>
+              </div>
+            )}
+
+            <div
+              className={
+                istVollbild
+                  ? 'grid flex-1 min-h-0 grid-cols-1 gap-4 md:grid-cols-2'
+                  : 'grid grid-cols-1 gap-4 md:grid-cols-2'
+              }
+            >
+              {/* Master-Viewport */}
+              <div
+                className={`rounded-xl border border-[#232933] bg-[#13171D] p-3 ${
+                  istVollbild ? 'flex min-h-0 flex-col gap-2' : 'space-y-2'
+                }`}
+              >
+                <div className="flex shrink-0 items-center justify-between text-xs">
                   <span className="font-semibold text-white">
                     Master: {masterQuelle?.angleCode ?? 'SIDELINE'}
                   </span>
                   <span className="font-mono text-[#8B949E] video-tabular">0 ms Basis</span>
                 </div>
-                <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
+                <div
+                  className={`flex items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E] ${
+                    istVollbild ? 'flex-1 min-h-0' : 'aspect-video'
+                  }`}
+                >
                   {masterQuelle?.streamUrl ? (
                     <video
                       key={`sync-master-${aktivesPlay.id}-${masterQuelle.streamUrl}`}
@@ -405,9 +649,13 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 </div>
               </div>
 
-              {/* Sekundärer Viewport mit echtem Video */}
-              <div className="rounded-xl border border-[#232933] bg-[#13171D] p-3 space-y-2">
-                <div className="flex items-center justify-between text-xs">
+              {/* Sekundärer Viewport */}
+              <div
+                className={`rounded-xl border border-[#232933] bg-[#13171D] p-3 ${
+                  istVollbild ? 'flex min-h-0 flex-col gap-2' : 'space-y-2'
+                }`}
+              >
+                <div className="flex shrink-0 items-center justify-between text-xs">
                   <select
                     value={sekundaerWinkel}
                     onChange={(e) => setSekundaerWinkel(e.target.value)}
@@ -427,7 +675,11 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     Offset: {aktuellerOffset} ms
                   </span>
                 </div>
-                <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E]">
+                <div
+                  className={`flex items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E] ${
+                    istVollbild ? 'flex-1 min-h-0' : 'aspect-video'
+                  }`}
+                >
                   {slaveQuelle?.streamUrl ? (
                     <video
                       key={`sync-slave-${aktivesPlay.id}-${sekundaerWinkel}-${slaveQuelle.streamUrl}`}
@@ -461,86 +713,117 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </div>
             </div>
 
-            {/* Synchronisierte Transportleiste */}
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#232933] bg-[#13171D] px-4 py-2.5">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  title="-1 Frame"
-                  onClick={() => {
-                    setSyncLaeuft(false);
-                    springeSyncMs(syncPosMs - FRAME_MS);
-                  }}
-                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSyncLaeuft((v) => !v)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
-                >
-                  {syncLaeuft ? (
-                    <Pause className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Play className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  title="+1 Frame"
-                  onClick={() => {
-                    setSyncLaeuft(false);
-                    springeSyncMs(syncPosMs + FRAME_MS);
-                  }}
-                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
-                >
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(FRAME_MS, syncDauerMs)}
-                step={FRAME_MS}
-                value={Math.min(syncPosMs, Math.max(FRAME_MS, syncDauerMs))}
-                onChange={(e) => {
-                  setSyncLaeuft(false);
-                  springeSyncMs(Number(e.target.value));
-                }}
-                className="h-1.5 flex-1 min-w-[140px] accent-[#F59E0B]"
-              />
-              <span className="font-mono text-xs text-[#8B949E] video-tabular">
-                {formatiereFrameTimecode(syncPosMs)}
-              </span>
-            </div>
-
-            {slaveQuelle && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#232933] bg-[#13171D] p-4">
-                <div className="text-xs text-[#8B949E]">
-                  Play #{aktivesPlay.playNumber} · Snap-Sync &amp; Frame-Feinabgleich
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {[-200, -40, 40, 200].map((delta) => (
-                    <button
-                      key={delta}
-                      type="button"
-                      onClick={() => speichereOffset(aktuellerOffset + delta)}
-                      className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1.5 font-mono text-xs text-[#E6EDF3] hover:border-[#F59E0B] video-tabular"
-                    >
-                      {delta > 0 ? `+${delta}` : delta} ms
-                    </button>
-                  ))}
+            {/* Synchronisierte Kontrollleiste + Offset + Hotkeys (im Vollbild immer unten sichtbar) */}
+            <div className="shrink-0 overflow-hidden rounded-xl border border-[#232933] bg-[#13171D]">
+              <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => speichereOffset(0)}
-                    className="rounded-md bg-[#232933] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#36404F]"
+                    title={`-1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepBack)})`}
+                    onClick={() => {
+                      setSyncLaeuft(false);
+                      springeSyncMs(syncPosMs - FRAME_MS);
+                    }}
+                    className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
                   >
-                    Offset zurücksetzen (0)
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    title={`Play / Pause (${formatiereHotkeyAnzeige(hotkeys.playPause)})`}
+                    onClick={() => setSyncLaeuft((v) => !v)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
+                  >
+                    {syncLaeuft ? (
+                      <Pause className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Play className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    title={`+1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepForward)})`}
+                    onClick={() => {
+                      setSyncLaeuft(false);
+                      springeSyncMs(syncPosMs + FRAME_MS);
+                    }}
+                    className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                  >
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(FRAME_MS, syncDauerMs)}
+                  step={FRAME_MS}
+                  value={Math.min(syncPosMs, Math.max(FRAME_MS, syncDauerMs))}
+                  onChange={(e) => {
+                    setSyncLaeuft(false);
+                    springeSyncMs(Number(e.target.value));
+                  }}
+                  className="h-1.5 flex-1 min-w-[140px] accent-[#F59E0B]"
+                />
+                <span className="font-mono text-xs text-[#8B949E] video-tabular">
+                  {formatiereFrameTimecode(syncPosMs)}
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleVollbild}
+                  title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige(hotkeys.toggleFullscreen)})`}
+                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                >
+                  {istVollbild ? (
+                    <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
               </div>
-            )}
+
+              {slaveQuelle && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#232933] px-4 py-2.5">
+                  <div className="text-xs text-[#8B949E]">
+                    Play #{aktivesPlay.playNumber} · Frame-Feinabgleich
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[-200, -40, 40, 200].map((delta) => (
+                      <button
+                        key={delta}
+                        type="button"
+                        onClick={() => speichereOffset(aktuellerOffset + delta)}
+                        className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1 font-mono text-xs text-[#E6EDF3] hover:border-[#F59E0B] video-tabular"
+                      >
+                        {delta > 0 ? `+${delta}` : delta} ms
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => speichereOffset(0)}
+                      className="rounded-md bg-[#232933] px-3 py-1 text-xs font-medium text-white hover:bg-[#36404F]"
+                    >
+                      Offset zurücksetzen (0)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 bg-[#0B0E11]/70 px-4 py-1.5 text-[11px] text-[#8B949E]">
+                {[
+                  { key: hotkeys.playPause, label: 'Play/Pause' },
+                  { key: hotkeys.stepBack, label: '-1 Frame' },
+                  { key: hotkeys.stepForward, label: '+1 Frame' },
+                  { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
+                ].map((item) => (
+                  <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <kbd className="rounded border border-[#232933] bg-[#13171D] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                      {formatiereHotkeyAnzeige(item.key)}
+                    </kbd>
+                    <span>{item.label}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Play-Lücken- & Offset-Übersicht */}
@@ -574,16 +857,32 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </div>
         </div>
       ) : (
-        <div className="space-y-4 rounded-xl border border-[#232933] bg-[#13171D] p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          ref={fastCutStageRef}
+          className={
+            istVollbild
+              ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-[#0B0E11] p-4'
+              : 'space-y-4 rounded-xl border border-[#232933] bg-[#13171D] p-5'
+          }
+        >
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
-              <h2 className="text-sm font-semibold text-white">
-                Einzeldatei Fast-Cut-Timeline
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold text-white">
+                  Ein-Punkt Fast-Cut-Timeline
+                </h2>
+                {cutStartMs > 0 && (
+                  <span className="rounded border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 font-mono text-[11px] text-[#F59E0B] video-tabular">
+                    Restclip ab {formatiereFrameTimecode(cutStartMs)}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-[#8B949E]">
-                Tasten: <span className="font-mono text-white">J/K/L</span> Transport ·{' '}
-                <span className="font-mono text-white">I</span> In-Punkt ·{' '}
-                <span className="font-mono text-white">O</span> Out-Punkt
+                Schnittbereich zählt automatisch ab{' '}
+                <span className="font-mono text-white">
+                  {cutStartMs === 0 ? 'Videobeginn' : formatiereFrameTimecode(cutStartMs)}
+                </span>{' '}
+                bis zur gesetzten Markierung.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -603,13 +902,29 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 ))}
               </select>
               <div className="font-mono text-sm text-[#F59E0B] video-tabular">
-                {formatiereFrameTimecode(tapePosMs)} ({tapeSpeed}x)
+                {formatiereFrameTimecode(restClip.relativMs)} / {formatiereFrameTimecode(restClip.dauerMs)} ({tapeSpeed}x)
               </div>
+              <button
+                type="button"
+                onClick={toggleVollbild}
+                title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige(hotkeys.toggleFullscreen)})`}
+                className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+              >
+                {istVollbild ? (
+                  <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
             </div>
           </div>
 
           {/* Fast-Cut Video-Viewport */}
-          <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-[#232933] bg-[#07090C]">
+          <div
+            className={`flex items-center justify-center overflow-hidden rounded-lg border border-[#232933] bg-[#07090C] ${
+              istVollbild ? 'flex-1 min-h-0 w-full' : 'aspect-video w-full'
+            }`}
+          >
             {fastCutQuelle?.streamUrl ? (
               <video
                 key={`fastcut-${fastCutWinkel}-${fastCutQuelle.streamUrl}`}
@@ -623,8 +938,9 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   if (Number.isFinite(v.duration) && v.duration > 0) {
                     setTapeDauerMs(Math.round(v.duration * 1000));
                   }
-                  if (tapePosMs > 0) {
-                    v.currentTime = tapePosMs / 1000;
+                  const zielMs = Math.max(cutStartMs, tapePosMs);
+                  if (zielMs > 0) {
+                    v.currentTime = zielMs / 1000;
                   }
                   if (tapeSpeed > 0 && v.paused) {
                     v.playbackRate = tapeSpeed;
@@ -640,73 +956,130 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             )}
           </div>
 
-          <input
-            type="range"
-            min={0}
-            max={Math.max(FRAME_MS, tapeDauerMs)}
-            step={FRAME_MS}
-            value={Math.min(tapePosMs, Math.max(FRAME_MS, tapeDauerMs))}
-            onChange={(e) => {
-              setTapeSpeed(0);
-              springeFastCutMs(Number(e.target.value));
-            }}
-            className="w-full accent-[#F59E0B]"
-          />
+          {/* Kontrollleiste + Schnitt-Markierung + Hotkeys (im Vollbild immer unten sichtbar) */}
+          <div className="shrink-0 space-y-3 rounded-xl border border-[#232933] bg-[#13171D] p-3">
+            <input
+              type="range"
+              min={restClip.startMs}
+              max={Math.max(restClip.startMs + FRAME_MS, tapeDauerMs)}
+              step={FRAME_MS}
+              value={restClip.geclamptAbsMs}
+              onChange={(e) => {
+                setTapeSpeed(0);
+                springeFastCutMs(Number(e.target.value));
+              }}
+              className="w-full accent-[#F59E0B]"
+            />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTapeSpeed((s) => (s <= -2 ? -4 : -2))}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
-              >
-                J (-2x)
-              </button>
-              <button
-                type="button"
-                onClick={() => setTapeSpeed(0)}
-                className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
-              >
-                <Pause className="h-3.5 w-3.5" aria-hidden="true" /> K
-              </button>
-              <button
-                type="button"
-                onClick={() => setTapeSpeed(1)}
-                className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
-              >
-                <Play className="h-3.5 w-3.5" aria-hidden="true" /> L (1x)
-              </button>
-              <button
-                type="button"
-                onClick={() => setTapeSpeed(2)}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white"
-              >
-                L (+2x)
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTapeSpeed((s) => (s <= -2 ? -4 : -2))}
+                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                >
+                  {formatiereHotkeyAnzeige(hotkeys.fastCutReverse)} (-2x)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTapeSpeed(0);
+                    springeFastCutMs(tapePosMs - FRAME_MS);
+                  }}
+                  title={`-1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepBack)})`}
+                  className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTapeSpeed(0)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                >
+                  <Pause className="h-3.5 w-3.5" aria-hidden="true" />{' '}
+                  {formatiereHotkeyAnzeige(hotkeys.fastCutPause)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTapeSpeed(1)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                >
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />{' '}
+                  {formatiereHotkeyAnzeige(hotkeys.fastCutForward)} (1x)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTapeSpeed(2)}
+                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                >
+                  {formatiereHotkeyAnzeige(hotkeys.fastCutForward)} (+2x)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTapeSpeed(0);
+                    springeFastCutMs(tapePosMs + FRAME_MS);
+                  }}
+                  title={`+1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepForward)})`}
+                  className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {sessionCuts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={letztenSchnittRueckgaengig}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-[#E6EDF3] hover:border-[#F59E0B]"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Letzten Schnitt rückgängig
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={setzeEinPunktSchnitt}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[#F59E0B] px-4 py-1.5 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24] video-tabular"
+                >
+                  <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
+                  Schnitt setzen ({formatiereHotkeyAnzeige(hotkeys.markCut)}) · +{formatiereFrameTimecode(restClip.relativMs)}
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setInMs(tapePosMs)}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 font-mono text-white video-tabular"
-              >
-                In (I): {inMs === null ? '—' : formatiereFrameTimecode(inMs)}
-              </button>
-              <button
-                type="button"
-                onClick={() => setOutMs(tapePosMs)}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 font-mono text-white video-tabular"
-              >
-                Out (O): {outMs === null ? '—' : formatiereFrameTimecode(outMs)}
-              </button>
-              <button
-                type="button"
-                onClick={erstelleFastCutPlay}
-                className="rounded-md bg-[#F59E0B] px-4 py-1.5 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24]"
-              >
-                Slice als Spielzug übernehmen
-              </button>
+            {sessionCuts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-[#232933]/70 pt-2 text-[11px]">
+                <span className="text-[#8B949E]">Geschnitten:</span>
+                {sessionCuts.map((c) => (
+                  <span
+                    key={c.playId}
+                    className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-0.5 font-mono text-[#E6EDF3] video-tabular"
+                  >
+                    #{c.playNumber} ({formatiereFrameTimecode(c.startMs)}–{formatiereFrameTimecode(c.endMs)})
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 pt-2 text-[11px] text-[#8B949E]">
+              {[
+                { key: hotkeys.fastCutReverse, label: 'Rückwärts' },
+                { key: hotkeys.fastCutPause, label: 'Pause' },
+                { key: hotkeys.fastCutForward, label: 'Vorwärts (1x/2x/4x)' },
+                { key: hotkeys.stepBack, label: '-1 Frame' },
+                { key: hotkeys.stepForward, label: '+1 Frame' },
+                { key: hotkeys.markCut, label: 'Schnitt setzen' },
+                { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
+              ].map((item) => (
+                <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
+                  <kbd className="rounded border border-[#232933] bg-[#0B0E11] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                    {formatiereHotkeyAnzeige(item.key)}
+                  </kbd>
+                  <span>{item.label}</span>
+                </span>
+              ))}
             </div>
           </div>
         </div>

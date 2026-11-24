@@ -58,6 +58,24 @@ test('Hotkey-Konfliktprüfung lehnt doppelte Tastenbelegung ab', async () => {
   );
   assert.equal(erfolg.ok, true);
   assert.equal(erfolg.belegung.addNote, 'KeyM');
+
+  // Legacy markIn/markOut Belegung wird sauber auf Ein-Punkt-Schnitt migriert
+  const migriert = frameMod.bereinigeHotkeyBelegung({
+    markIn: 'KeyC',
+    markOut: 'KeyO',
+  });
+  assert.equal(migriert.markCut, 'KeyC');
+  assert.equal('markOut' in migriert, false);
+
+  // Restclip-Berechnung begrenzt Positionen auf [cutStartMs .. totalDauerMs]
+  const rest = frameMod.berechneRestclipZeit(5000, 12000, 60000);
+  assert.equal(rest.startMs, 12000);
+  assert.equal(rest.geclamptAbsMs, 12000);
+  assert.equal(rest.relativMs, 0);
+  assert.equal(rest.dauerMs, 48000);
+
+  const mitte = frameMod.berechneRestclipZeit(20000, 12000, 60000);
+  assert.equal(mitte.relativMs, 8000);
 });
 
 test('Tagging-Engine: Bidirektionale Gain/Loss-Berechnung inkl. FLAG-Ausnahme & Admin-Wörterbuchschutz', async () => {
