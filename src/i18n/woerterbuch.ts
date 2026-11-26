@@ -48,6 +48,9 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     settingsUserTitle: 'Video-Wiedergabe & Hotkeys',
     settingsTeamTitle: 'Tagging-Schema & Lernendes Wörterbuch',
     settingsSysadminTitle: 'Video S3-Ablage & Schonfrist',
+    editReel: 'Reel & Angles bearbeiten',
+    breakdownOverlayTitle: 'Breakdown-Overlay',
+    annotationSharingTitle: 'Anmerkungs-Freigaben & Farbcodes',
   },
   en: {
     tabLibrary: 'Video Library',
@@ -96,5 +99,8 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     settingsUserTitle: 'Video Playback & Hotkeys',
     settingsTeamTitle: 'Tagging Schema & Team Dictionary',
     settingsSysadminTitle: 'Video S3 Storage & Retention',
+    editReel: 'Edit Reel & Angles',
+    breakdownOverlayTitle: 'Breakdown Overlay',
+    annotationSharingTitle: 'Annotation Sharing & Color Codes',
   },
 };

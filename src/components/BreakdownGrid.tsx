@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { TeamRolle } from '@sidelineos/plugin-sdk';
-import { Plus, Trash2 } from 'lucide-react';
+import { MessageSquare, Pencil, Plus, Trash2 } from 'lucide-react';
+import type { PlayAnmerkungsZaehler } from '../services/annotationVisibility';
 import {
   berechneGainLoss,
   berechneNeueFeldposition,
@@ -19,6 +20,7 @@ interface BreakdownGridProps {
   schema: TeamTaggingSchema;
   teamRolle: TeamRolle;
   erlaubteSpalten?: string[] | null;
+  anmerkungenProPlay?: Record<string, PlayAnmerkungsZaehler>;
   onSelectPlay: (playId: string) => void;
   onUpdatePlay: (playId: string, breakdown: PlayBreakdownDaten) => Promise<void>;
   onAddPlay?: () => Promise<void>;
@@ -32,6 +34,7 @@ export function BreakdownGrid({
   schema,
   teamRolle,
   erlaubteSpalten,
+  anmerkungenProPlay,
   onSelectPlay,
   onUpdatePlay,
   onAddPlay,
@@ -137,6 +140,9 @@ export function BreakdownGrid({
         <table className="w-full border-collapse text-left text-xs">
           <thead>
             <tr className="border-b border-sl-border bg-sl-canvas text-[11px] font-semibold text-sl-muted">
+              <th className="w-16 whitespace-nowrap px-2 py-2.5 text-center font-mono" title="Anmerkungen">
+                Info
+              </th>
               {spalten.map((spalte) => (
                 <th
                   key={spalte.key}
@@ -153,6 +159,9 @@ export function BreakdownGrid({
           <tbody>
             {plays.map((play, idx) => {
               const aktiv = play.id === aktivesPlayId;
+              const zaehler = anmerkungenProPlay?.[play.id];
+              const hatZeichnung = (zaehler?.drawingFrames ?? 0) > 0;
+              const hatNotiz = (zaehler?.noteCount ?? 0) > 0;
               return (
                 <tr
                   key={play.id}
@@ -163,6 +172,32 @@ export function BreakdownGrid({
                       : 'text-sl-primary hover:bg-sl-elevated/60'
                   }`}
                 >
+                  <td className="whitespace-nowrap px-2 py-1 text-center">
+                    {hatZeichnung || hatNotiz ? (
+                      <span className="inline-flex items-center justify-center gap-1.5 text-[10px] text-sl-accent video-tabular">
+                        {hatZeichnung && (
+                          <span
+                            className="inline-flex items-center gap-0.5"
+                            title={`${zaehler!.drawingFrames} annotierte(r) Frame(s) mit Zeichnungen`}
+                          >
+                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <span>{zaehler!.drawingFrames}</span>
+                          </span>
+                        )}
+                        {hatNotiz && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-sl-primary"
+                            title={`${zaehler!.noteCount} Coach-Notiz(en)`}
+                          >
+                            <MessageSquare className="h-3 w-3" aria-hidden="true" />
+                            <span>{zaehler!.noteCount}</span>
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-sl-subtle">—</span>
+                    )}
+                  </td>
                   {spalten.map((spalte) => {
                     const rawVal =
                       spalte.key === 'play_number'

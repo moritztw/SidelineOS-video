@@ -6,33 +6,46 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Eraser,
   Highlighter,
   Maximize2,
   MessageSquarePlus,
   Minimize2,
+  Minus,
   MousePointer,
   Pause,
   Pencil,
   Play,
   SkipBack,
   SkipForward,
+  SlidersHorizontal,
   Trash2,
   Type,
   Undo2,
 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
 import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
+import {
+  ANMERKUNGS_ZIELGRUPPEN,
+  bereinigeAnmerkungsKonfig,
+  filtereTelestrationElementeFuerBenutzer,
+  findeZielgruppeZuFarbe,
+  istAnmerkungFuerBenutzerSichtbar,
+  sammleFrameAnmerkungsMarker,
+  sammlePlayAnmerkungsZaehler,
+} from '../services/annotationVisibility';
 import { videoApi } from '../services/apiClient';
 import {
   FRAME_MS,
-  STANDARD_HOTKEYS,
+  berechnePrevPlayOderClipStart,
+  bereinigeHotkeyBelegung,
   findeUeberfahrenenAutoStopFrame,
   formatiereFrameTimecode,
   formatiereHotkeyAnzeige,
   frameIndexZuMs,
   hatExaktenFrameTreffer,
+  matchesHotkeyEvent,
   msZuFrameIndex,
-  normalisiereTaste,
 } from '../services/frameAndHotkeys';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
 import type {
@@ -40,14 +53,16 @@ import type {
   EckPosition,
   NotizStatus,
   PlayBreakdownDaten,
+  SichtbarkeitsStufe,
   TelestrationElement,
   TelestrationWerkzeug,
   WinkelCode,
 } from '../types/video';
 import { BreakdownGrid } from './BreakdownGrid';
+import { BreakdownOverlay } from './BreakdownOverlay';
 import { TelestrationCanvas } from './TelestrationCanvas';
 
-const FARBEN = ['#F59E0B', '#EF4444', '#38BDF8', '#22C55E', '#FFFFFF'];
+const KLASSISCHE_FARBEN = ['#F59E0B', '#EF4444', '#38BDF8', '#22C55E', '#FFFFFF'];
 
 const ECKEN_KLASSEN: Record<EckPosition, string> = {
   'top-left': 'top-3 left-3',
@@ -55,6 +70,23 @@ const ECKEN_KLASSEN: Record<EckPosition, string> = {
   'bottom-left': 'bottom-16 left-3',
   'bottom-right': 'bottom-16 right-3',
 };
+
+function BlockLineIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <line x1="2.5" y1="13" x2="11.5" y2="4" />
+      <line x1="8.5" y1="1.5" x2="14.5" y2="7.5" />
+    </svg>
+  );
+}
+
+function DashedLineIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2.5 2.5" aria-hidden="true">
+      <line x1="2.5" y1="13" x2="13.5" y2="2.5" />
+    </svg>
+  );
+}
 
 export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
@@ -75,10 +107,21 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const notizInputRef = useRef<HTMLInputElement | null>(null);
   const letzteMsRef = useRef(0);
 
   const istCoachOderAdmin =
     ctx.aktiveTeamAnsicht === 'COACH' || ctx.aktiveTeamAnsicht === 'TEAM_ADMIN';
+
+  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
+  const sharingKonfig = useMemo(
+    () => bereinigeAnmerkungsKonfig(schema.annotationSharing),
+    [schema.annotationSharing]
+  );
+  const hotkeys = useMemo(
+    () => bereinigeHotkeyBelegung(userPrefs?.hotkeys),
+    [userPrefs?.hotkeys]
+  );
 
   const sichtbarePlays = useMemo(() => {
     if (!aktiverPlaylistFilterIds) return aktivePlays;
@@ -96,15 +139,31 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const [autoStop, setAutoStop] = useState<boolean>(userPrefs?.autoStopEnabled ?? true);
   const [istVollbild, setIstVollbild] = useState(false);
   const [werkzeug, setWerkzeug] = useState<TelestrationWerkzeug>('select');
-  const [farbe, setFarbe] = useState('#F59E0B');
+  const [aktiveZielgruppe, setAktiveZielgruppe] = useState<SichtbarkeitsStufe>('ALL_PLAYERS');
+  const [farbe, setFarbe] = useState<string>(sharingKonfig.colorMap.ALL_PLAYERS);
   const [selectedElId, setSelectedElId] = useState<string | null>(null);
   const [zeichenBarSichtbar, setZeichenBarSichtbar] = useState(true);
+  const [breakdownOverlayOffen, setBreakdownOverlayOffen] = useState(false);
+  const [coachFilterGruppe, setCoachFilterGruppe] = useState<'ALL' | SichtbarkeitsStufe>('ALL');
   const [notizEntwurfText, setNotizEntwurfText] = useState('');
+  const [notizZielgruppe, setNotizZielgruppe] = useState<SichtbarkeitsStufe>('ALL_PLAYERS');
   const [editNotizId, setEditNotizId] = useState<string | null>(null);
+
+  // Farbe synchron halten, wenn Admin Farbschema ändert und Farb-Sharing aktiv ist
+  useEffect(() => {
+    if (sharingKonfig.enabled) {
+      setFarbe(sharingKonfig.colorMap[aktiveZielgruppe]);
+    }
+  }, [sharingKonfig.enabled, sharingKonfig.colorMap, aktiveZielgruppe]);
 
   const aktivesPlay = useMemo(
     () => sichtbarePlays.find((p) => p.id === aktivesPlayId) ?? sichtbarePlays[0] ?? null,
     [sichtbarePlays, aktivesPlayId]
+  );
+
+  const aktivesPlayIndex = useMemo(
+    () => (aktivesPlay ? sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id) : -1),
+    [sichtbarePlays, aktivesPlay]
   );
 
   useEffect(() => {
@@ -134,7 +193,6 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     aktiveQuelle?.sourceMode === 'TIME_SLICE'
       ? gespeicherteDauerMs
       : realeClipDauerMs ?? gespeicherteDauerMs;
-  const playEndMs = playStartMs + effektiveDauerMs;
   const effektiverOffset = aktiveQuelle?.offsetMs ?? 0;
   const aktuellerFrame = msZuFrameIndex(aktuelleMs);
 
@@ -144,8 +202,62 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setVideoFehler(null);
   }, [aktiveQuelle?.streamUrl, aktivesPlay?.id, aktiverWinkel]);
 
-  // Exakte Frame-Zuordnung für Zeichnungen & Coach-Notizen (kein Vorab-Aufblitzen!)
-  const frameTelestration = useMemo(
+  // Rollen-, Unit- und optionaler Coach-Vorschau-Filter (#2)
+  const sichtbareTelestrations = useMemo(() => {
+    return telestrations
+      .map((tel) => {
+        let filtered = filtereTelestrationElementeFuerBenutzer(
+          tel.elements,
+          ctx.aktiveTeamAnsicht,
+          ctx.userUnits,
+          sharingKonfig.enabled
+        );
+        if (istCoachOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
+          filtered = filtered.filter(
+            (el) => (el.visibility ?? findeZielgruppeZuFarbe(sharingKonfig, el.color)) === coachFilterGruppe
+          );
+        }
+        return { ...tel, elements: filtered };
+      })
+      .filter((tel) => tel.elements.length > 0);
+  }, [
+    telestrations,
+    ctx.aktiveTeamAnsicht,
+    ctx.userUnits,
+    sharingKonfig,
+    istCoachOderAdmin,
+    coachFilterGruppe,
+  ]);
+
+  const sichtbareNotizen = useMemo(() => {
+    return notizen.filter((n) => {
+      if (!istCoachOderAdmin && n.status !== 'PUBLISHED') return false;
+      if (
+        !istAnmerkungFuerBenutzerSichtbar(
+          n.visibility,
+          ctx.aktiveTeamAnsicht,
+          ctx.userUnits,
+          sharingKonfig.enabled
+        )
+      ) {
+        return false;
+      }
+      if (istCoachOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
+        return (n.visibility ?? 'ALL_PLAYERS') === coachFilterGruppe;
+      }
+      return true;
+    });
+  }, [
+    notizen,
+    istCoachOderAdmin,
+    ctx.aktiveTeamAnsicht,
+    ctx.userUnits,
+    sharingKonfig.enabled,
+    coachFilterGruppe,
+  ]);
+
+  // Roh-Eintrag (inkl. ggf. vom Coach-Filter ausgeblendeter Elemente zum sicheren Speichern)
+  const roheFrameTelestration = useMemo(
     () =>
       telestrations.find(
         (tel) =>
@@ -156,37 +268,66 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     [telestrations, aktivesPlay?.id, aktiverWinkel, aktuelleMs]
   );
 
+  // Exakte Frame-Zuordnung für Zeichnungen & Coach-Notizen (kein Vorab-Aufblitzen!)
+  const frameTelestration = useMemo(
+    () =>
+      sichtbareTelestrations.find(
+        (tel) =>
+          tel.playId === aktivesPlay?.id &&
+          tel.angleCode === aktiverWinkel &&
+          hatExaktenFrameTreffer(aktuelleMs, tel.frameIndex)
+      ),
+    [sichtbareTelestrations, aktivesPlay?.id, aktiverWinkel, aktuelleMs]
+  );
+
   const frameNotizen = useMemo(
     () =>
-      notizen.filter(
+      sichtbareNotizen.filter(
         (n) =>
           n.playId === aktivesPlay?.id &&
           n.angleCode === aktiverWinkel &&
-          hatExaktenFrameTreffer(aktuelleMs, n.frameIndex) &&
-          (istCoachOderAdmin || n.status === 'PUBLISHED')
+          hatExaktenFrameTreffer(aktuelleMs, n.frameIndex)
       ),
-    [notizen, aktivesPlay?.id, aktiverWinkel, aktuelleMs, istCoachOderAdmin]
+    [sichtbareNotizen, aktivesPlay?.id, aktiverWinkel, aktuelleMs]
   );
 
-  const autoStopZielFrames = useMemo(() => {
+  // Zeitleisten-Marker & Play-Zähler (#1)
+  const timelineMarker = useMemo(() => {
     if (!aktivesPlay) return [];
-    const frames = new Set<number>();
-    telestrations.forEach((tel) => {
-      if (tel.playId === aktivesPlay.id && tel.angleCode === aktiverWinkel && tel.elements.length > 0) {
-        frames.add(tel.frameIndex);
-      }
-    });
-    notizen.forEach((n) => {
-      if (
-        n.playId === aktivesPlay.id &&
-        n.angleCode === aktiverWinkel &&
-        (istCoachOderAdmin || n.status === 'PUBLISHED')
-      ) {
-        frames.add(n.frameIndex);
-      }
-    });
-    return Array.from(frames);
-  }, [telestrations, notizen, aktivesPlay, aktiverWinkel, istCoachOderAdmin]);
+    return sammleFrameAnmerkungsMarker(
+      sichtbareTelestrations,
+      sichtbareNotizen,
+      aktivesPlay.id,
+      aktiverWinkel
+    );
+  }, [sichtbareTelestrations, sichtbareNotizen, aktivesPlay, aktiverWinkel]);
+
+  const playAnmerkungen = useMemo(
+    () => sammlePlayAnmerkungsZaehler(sichtbareTelestrations, sichtbareNotizen),
+    [sichtbareTelestrations, sichtbareNotizen]
+  );
+
+  // Autoren-Badge am aktuellen Frame (auch bei reinen Zeichnungen ohne Textnotiz) (#1)
+  const frameZeichnungsAutoren = useMemo(() => {
+    if (!frameTelestration || frameTelestration.elements.length === 0) return [];
+    const namen = new Set<string>();
+    if (frameTelestration.authorName) namen.add(frameTelestration.authorName);
+    for (const el of frameTelestration.elements) {
+      if (el.authorName) namen.add(el.authorName);
+    }
+    return Array.from(namen);
+  }, [frameTelestration]);
+
+  const freieAutorenEcke: EckPosition = useMemo(() => {
+    const belegt = new Set(frameNotizen.map((n) => n.cornerPosition));
+    const praeferenz: EckPosition[] = ['top-left', 'bottom-left', 'top-right', 'bottom-right'];
+    return praeferenz.find((ecke) => !belegt.has(ecke)) ?? 'top-left';
+  }, [frameNotizen]);
+
+  const autoStopZielFrames = useMemo(
+    () => timelineMarker.map((m) => m.frameIndex),
+    [timelineMarker]
+  );
 
   // Echte <video>-Wiedergabe direkt mit Play/Pause/PlaybackRate synchronisieren
   useEffect(() => {
@@ -208,7 +349,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   }, [laeuft, tempo, aktiveQuelle?.streamUrl, aktivesPlay?.id, aktiverWinkel]);
 
-  // Quantisierter 25-fps-Tracking-Loop (liest reale Video-Zeit oder fällt ohne streamUrl auf Timer zurück)
+  // Quantisierter 25-fps-Tracking-Loop
   useEffect(() => {
     if (!laeuft) return;
     let timerId: number;
@@ -306,6 +447,18 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setSelectedElId(null);
   };
 
+  const handlePrevPlayOderClipStart = () => {
+    if (!aktivesPlay) return;
+    const aktion = berechnePrevPlayOderClipStart(aktuelleMs, aktivesPlayIndex);
+    if (aktion.aktion === 'clipStart') {
+      setLaeuft(false);
+      videoRef.current?.pause();
+      springeZuMs(0);
+    } else if (sichtbarePlays[aktion.zielIndex]) {
+      handlePlayWechsel(sichtbarePlays[aktion.zielIndex].id);
+    }
+  };
+
   const handleWinkelWechsel = (winkel: WinkelCode) => {
     setAktiverWinkel(winkel);
     setSelectedElId(null);
@@ -315,6 +468,18 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       const neuerOffset = zielQuelle?.offsetMs ?? 0;
       videoRef.current.currentTime = Math.max(0, (neuerStart + neuerOffset + aktuelleMs) / 1000);
     }
+  };
+
+  const toggleBreakdownOverlay = () => {
+    setBreakdownOverlayOffen((offen) => {
+      const naechster = !offen;
+      if (naechster) {
+        // Auto-Pause beim Öffnen des Overlays (#6)
+        setLaeuft(false);
+        videoRef.current?.pause();
+      }
+      return naechster;
+    });
   };
 
   useEffect(() => {
@@ -334,41 +499,107 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   };
 
-  // Konfigurierbare Hotkeys
+  const speichereZeichnung = async (sichtbareElemente: TelestrationElement[]) => {
+    if (!istCoachOderAdmin || !aktivesReel || !aktivesPlay) return;
+    const frameIndex = aktuellerFrame;
+
+    // Falls ein Coach-Vorschau-Filter aktiv ist, ausgeblendete Elemente bewahren
+    let gesamtElemente = sichtbareElemente;
+    if (sharingKonfig.enabled && coachFilterGruppe !== 'ALL' && roheFrameTelestration) {
+      const ausgeblendete = roheFrameTelestration.elements.filter(
+        (el) => (el.visibility ?? findeZielgruppeZuFarbe(sharingKonfig, el.color)) !== coachFilterGruppe
+      );
+      gesamtElemente = [...ausgeblendete, ...sichtbareElemente];
+    }
+
+    aktualisiereTelestrationsLokal((alt) => {
+      const ohne = alt.filter(
+        (x) =>
+          !(
+            x.playId === aktivesPlay.id &&
+            x.angleCode === aktiverWinkel &&
+            x.frameIndex === frameIndex
+          )
+      );
+      if (gesamtElemente.length === 0) return ohne;
+      return [
+        ...ohne,
+        {
+          id: `tel-${aktivesPlay.id}-${frameIndex}`,
+          reelId: aktivesReel.id,
+          playId: aktivesPlay.id,
+          angleCode: aktiverWinkel,
+          frameIndex,
+          elements: gesamtElemente,
+          authorUuid: ctx.benutzer.uuid,
+          authorName: ctx.benutzer.vollerName,
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+    });
+    await videoApi.speichereTelestration(ctx.team.id, aktivesPlay.id, {
+      reelId: aktivesReel.id,
+      angleCode: aktiverWinkel,
+      frameIndex,
+      elements: gesamtElemente,
+    });
+  };
+
+  const loescheAusgewaehlteZeichnung = () => {
+    if (!istCoachOderAdmin || !selectedElId) return;
+    const aktuell = frameTelestration?.elements ?? [];
+    if (!aktuell.some((el) => el.id === selectedElId)) return;
+    const verbleibend = aktuell.filter((el) => el.id !== selectedElId);
+    setSelectedElId(null);
+    void speichereZeichnung(verbleibend);
+  };
+
+  // Konfigurierbare Hotkeys inkl. Modifier-Support (#3, #5, #6)
   useEffect(() => {
-    const hotkeys = userPrefs?.hotkeys ?? STANDARD_HOTKEYS;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
-      const taste = normalisiereTaste(e.code || e.key);
-      if (taste === hotkeys.playPause) {
+      if (matchesHotkeyEvent(e, hotkeys.playPause)) {
         e.preventDefault();
         setLaeuft((v) => !v);
-      } else if (taste === hotkeys.stepBack) {
+      } else if (matchesHotkeyEvent(e, hotkeys.stepBack)) {
         e.preventDefault();
         setLaeuft(false);
         springeZuMs(aktuelleMs - FRAME_MS);
-      } else if (taste === hotkeys.stepForward) {
+      } else if (matchesHotkeyEvent(e, hotkeys.stepForward)) {
         e.preventDefault();
         setLaeuft(false);
         springeZuMs(aktuelleMs + FRAME_MS);
-      } else if (taste === hotkeys.prevPlay && aktivesPlay) {
+      } else if (matchesHotkeyEvent(e, hotkeys.prevPlay) && aktivesPlay) {
         e.preventDefault();
-        const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-        if (idx > 0) handlePlayWechsel(sichtbarePlays[idx - 1].id);
-      } else if (taste === hotkeys.nextPlay && aktivesPlay) {
+        handlePrevPlayOderClipStart();
+      } else if (matchesHotkeyEvent(e, hotkeys.nextPlay) && aktivesPlay) {
         e.preventDefault();
-        const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-        if (idx >= 0 && idx < sichtbarePlays.length - 1) {
-          handlePlayWechsel(sichtbarePlays[idx + 1].id);
+        if (aktivesPlayIndex >= 0 && aktivesPlayIndex < sichtbarePlays.length - 1) {
+          handlePlayWechsel(sichtbarePlays[aktivesPlayIndex + 1].id);
         }
-      } else if (taste === hotkeys.toggleFullscreen) {
+      } else if (matchesHotkeyEvent(e, hotkeys.toggleFullscreen)) {
         e.preventDefault();
         toggleVollbild();
-      } else if (taste === hotkeys.toggleDraw && istCoachOderAdmin) {
+      } else if (matchesHotkeyEvent(e, hotkeys.toggleBreakdownOverlay)) {
+        e.preventDefault();
+        toggleBreakdownOverlay();
+      } else if (matchesHotkeyEvent(e, hotkeys.toggleDraw) && istCoachOderAdmin) {
         e.preventDefault();
         setZeichenBarSichtbar((v) => !v);
+      } else if (matchesHotkeyEvent(e, hotkeys.addNote) && istCoachOderAdmin) {
+        e.preventDefault();
+        setLaeuft(false);
+        notizInputRef.current?.focus();
+      } else if (
+        istCoachOderAdmin &&
+        selectedElId &&
+        (matchesHotkeyEvent(e, hotkeys.deleteAnnotation) ||
+          (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'Backspace'))
+      ) {
+        e.preventDefault();
+        loescheAusgewaehlteZeichnung();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -383,41 +614,10 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     );
   }
 
-  const speichereZeichnung = async (elements: TelestrationElement[]) => {
-    if (!istCoachOderAdmin) return;
-    const frameIndex = aktuellerFrame;
-    aktualisiereTelestrationsLokal((alt) => {
-      const ohne = alt.filter(
-        (x) =>
-          !(
-            x.playId === aktivesPlay.id &&
-            x.angleCode === aktiverWinkel &&
-            x.frameIndex === frameIndex
-          )
-      );
-      return [
-        ...ohne,
-        {
-          id: `tel-${aktivesPlay.id}-${frameIndex}`,
-          reelId: aktivesReel.id,
-          playId: aktivesPlay.id,
-          angleCode: aktiverWinkel,
-          frameIndex,
-          elements,
-          updatedAt: new Date().toISOString(),
-        },
-      ];
-    });
-    await videoApi.speichereTelestration(ctx.team.id, aktivesPlay.id, {
-      reelId: aktivesReel.id,
-      angleCode: aktiverWinkel,
-      frameIndex,
-      elements,
-    });
-  };
-
   const handleNotizAnlegen = async () => {
     if (!notizEntwurfText.trim() || !istCoachOderAdmin) return;
+    const zielVis: SichtbarkeitsStufe = sharingKonfig.enabled ? notizZielgruppe : 'ALL_PLAYERS';
+    const notizFarbe = sharingKonfig.enabled ? sharingKonfig.colorMap[zielVis] : farbe;
     const res = await videoApi.erstelleNotiz(ctx.team.id, aktivesPlay.id, {
       reelId: aktivesReel.id,
       playId: aktivesPlay.id,
@@ -426,6 +626,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       text: notizEntwurfText.trim(),
       status: 'PUBLISHED',
       cornerPosition: userPrefs?.defaultCorner ?? 'top-right',
+      visibility: zielVis,
+      color: notizFarbe,
     });
     aktualisiereNotizenLokal((alt) => [
       ...alt,
@@ -438,6 +640,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         text: notizEntwurfText.trim(),
         status: 'PUBLISHED',
         cornerPosition: userPrefs?.defaultCorner ?? 'top-right',
+        visibility: zielVis,
+        color: notizFarbe,
         authorUuid: ctx.benutzer.uuid,
         authorName: ctx.benutzer.vollerName,
         createdAt: new Date().toISOString(),
@@ -449,7 +653,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const handleNotizUpdate = async (
     note: CoachNotiz,
-    patch: Partial<Pick<CoachNotiz, 'text' | 'status' | 'cornerPosition'>>
+    patch: Partial<Pick<CoachNotiz, 'text' | 'status' | 'cornerPosition' | 'visibility' | 'color'>>
   ) => {
     aktualisiereNotizenLokal((alt) =>
       alt.map((n) => (n.id === note.id ? { ...n, ...patch } : n))
@@ -462,11 +666,29 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     await videoApi.loescheNotiz(ctx.team.id, noteId);
   };
 
-  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
+  const handlePlayUpdate = async (playId: string, breakdown: PlayBreakdownDaten) => {
+    aktualisierePlaysLokal((alt) =>
+      alt.map((p) => (p.id === playId ? { ...p, breakdown } : p))
+    );
+    await videoApi.aktualisierePlay(ctx.team.id, playId, { breakdown });
+  };
+
+  const handleSchemaLearn = async (nextSchema: typeof schema) => {
+    setTeamSchema(nextSchema);
+    await videoApi.speichereSchema(ctx.team.id, nextSchema);
+  };
+
+  const gruppenLabel = (vis?: SichtbarkeitsStufe): string => {
+    const gefunden = ANMERKUNGS_ZIELGRUPPEN.find((g) => g.id === (vis ?? 'ALL_PLAYERS'));
+    return gefunden ? (ctx.locale === 'en' ? gefunden.kurzEn : gefunden.kurzDe) : 'Alle';
+  };
+
+  const vorherigesPlay =
+    aktivesPlayIndex > 0 ? sichtbarePlays[aktivesPlayIndex - 1] : undefined;
 
   return (
     <section className="space-y-5">
-      {/* Kopfzeile: Reel-Info, Winkel-Umschalter & Playlist-Hinweis */}
+      {/* Kopfzeile: Reel-Info, Coach-Zielgruppen-Filter & Winkel-Umschalter */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <h1 className="text-lg font-bold text-sl-heading">{aktivesReel.title}</h1>
@@ -484,10 +706,25 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             <button
               type="button"
               onClick={() => setAktiverPlaylistFilterIds(null)}
-              className="rounded-md border border-sl-accent/50 px-3 py-1.5 text-xs text-sl-accent hover:bg-sl-accent/10"
+              className="rounded-md border border-sl-accent/50 px-3 py-1.5 text-xs text-sl-accent hover:bg-sl-accent/10 whitespace-nowrap"
             >
               Playlist-Filter aufheben ({sichtbarePlays.length})
             </button>
+          )}
+          {istCoachOderAdmin && sharingKonfig.enabled && (
+            <select
+              aria-label="Anmerkungen nach Zielgruppe filtern"
+              value={coachFilterGruppe}
+              onChange={(e) => setCoachFilterGruppe(e.target.value as 'ALL' | SichtbarkeitsStufe)}
+              className="rounded-lg border border-sl-border bg-sl-surface px-2.5 py-1.5 text-xs text-sl-primary focus:border-sl-accent focus:outline-none"
+            >
+              <option value="ALL">Anmerkungen: Alle Gruppen</option>
+              {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+                <option key={g.id} value={g.id}>
+                  Nur {g.labelDe}
+                </option>
+              ))}
+            </select>
           )}
           <div className="flex items-center gap-1 rounded-lg border border-sl-border bg-sl-surface p-1">
             {aktivesReel.angles.map((angle) => {
@@ -514,7 +751,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         </div>
       </div>
 
-      {/* Video-Bühne inkl. Telestration, Ecken-Overlay & Vollbild-Zeichenleiste */}
+      {/* Video-Bühne inkl. Telestration, Coach-Badge, Ecken-Overlay, Breakdown-Overlay & Zeichenleiste */}
       <div
         ref={stageRef}
         className={
@@ -579,213 +816,336 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               <video
                 key={`${aktivesPlay.id}-${aktiverWinkel}-${aktiveQuelle.streamUrl}`}
                 ref={videoRef}
-              src={aktiveQuelle.streamUrl}
-              preload="auto"
-              playsInline
-              muted
-              onLoadedMetadata={(e) => {
-                const v = e.currentTarget;
-                if (Number.isFinite(v.duration) && v.duration > 0) {
-                  setRealeClipDauerMs(Math.round(v.duration * 1000));
-                }
-                const startSek = Math.max(
-                  0,
-                  (playStartMs + effektiverOffset + letzteMsRef.current) / 1000
-                );
-                if (startSek > 0) {
-                  v.currentTime = startSek;
-                }
-                if (laeuft && v.paused) {
-                  v.playbackRate = tempo;
-                  v.play().catch((err: unknown) => {
-                    if (err instanceof DOMException && err.name === 'AbortError') return;
-                    setVideoFehler(err instanceof Error ? err.message : 'Videowiedergabe blockiert.');
-                    setLaeuft(false);
-                  });
-                }
-              }}
-              onError={() =>
-                setVideoFehler('Videodatei konnte vom S3-Stream nicht geladen werden.')
-              }
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,#18202B_0%,#07090C_75%)] text-center px-4">
-              <div className="font-mono text-2xl font-semibold text-white video-tabular">
-                PLAY #{aktivesPlay.playNumber} · {aktiverWinkel}
-              </div>
-              <div className="mt-1 font-mono text-xs text-[#8B949E] video-tabular">
-                {videoFehler ??
-                  `${aktiveQuelle?.fileName ?? 'Kein Video-Asset hinterlegt'} · ${formatiereFrameTimecode(aktuelleMs)} (25 fps)`}
-              </div>
-            </div>
-          )}
-
-          {/* Vektor-Canvas exakt auf Frame + Winkel */}
-          <TelestrationCanvas
-            elements={frameTelestration?.elements ?? []}
-            werkzeug={istCoachOderAdmin ? werkzeug : 'select'}
-            farbe={farbe}
-            readOnly={!istCoachOderAdmin}
-            selectedId={selectedElId}
-            onSelect={setSelectedElId}
-            onChange={speichereZeichnung}
-          />
-
-          {/* Kommentar-Overlay in frei wählbarer Bildecke */}
-          {frameNotizen.map((notiz) => (
-            <div
-              key={notiz.id}
-              className={`absolute z-20 w-72 rounded-lg border border-sl-border bg-sl-canvas/90 p-3 backdrop-blur-sm ${ECKEN_KLASSEN[notiz.cornerPosition]}`}
-            >
-              <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-sl-muted">
-                <span className="truncate font-medium text-sl-accent">
-                  {notiz.authorName} · {notiz.status === 'DRAFT' ? 'Entwurf' : 'Veröffentlicht'}
-                </span>
-                {istCoachOderAdmin && (
-                  <div className="flex items-center gap-1">
-                    <select
-                      aria-label="Overlay-Ecke wählen"
-                      value={notiz.cornerPosition}
-                      onChange={(e) =>
-                        handleNotizUpdate(notiz, { cornerPosition: e.target.value as EckPosition })
-                      }
-                      className="rounded border border-sl-border bg-sl-surface px-1 py-0.5 text-[10px] text-sl-primary"
-                    >
-                      <option value="top-left">Oben L</option>
-                      <option value="top-right">Oben R</option>
-                      <option value="bottom-left">Unten L</option>
-                      <option value="bottom-right">Unten R</option>
-                    </select>
-                    <button
-                      type="button"
-                      title="Notiz löschen"
-                      onClick={() => handleNotizLoeschen(notiz.id)}
-                      className="rounded p-0.5 text-sl-muted hover:text-sl-danger-text"
-                    >
-                      <Trash2 className="h-3 w-3" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {editNotizId === notiz.id && istCoachOderAdmin ? (
-                <div className="space-y-1.5">
-                  <textarea
-                    rows={2}
-                    value={notiz.text}
-                    onChange={(e) =>
-                      aktualisiereNotizenLokal((alt) =>
-                        alt.map((n) => (n.id === notiz.id ? { ...n, text: e.target.value } : n))
-                      )
-                    }
-                    className="w-full rounded border border-sl-accent bg-sl-surface p-1.5 text-xs text-sl-heading focus:outline-none"
-                  />
-                  <div className="flex items-center justify-between">
-                    <select
-                      value={notiz.status}
-                      onChange={(e) =>
-                        handleNotizUpdate(notiz, { status: e.target.value as NotizStatus })
-                      }
-                      className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 text-[11px] text-sl-primary"
-                    >
-                      <option value="DRAFT">Entwurf</option>
-                      <option value="PUBLISHED">Veröffentlicht</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleNotizUpdate(notiz, { text: notiz.text });
-                        setEditNotizId(null);
-                      }}
-                      className="rounded bg-sl-accent px-2 py-0.5 text-[11px] font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
-                    >
-                      Fertig
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p
-                  onClick={() => istCoachOderAdmin && setEditNotizId(notiz.id)}
-                  className={`text-xs leading-relaxed text-sl-primary ${
-                    istCoachOderAdmin ? 'cursor-text' : ''
-                  }`}
-                >
-                  {notiz.text}
-                </p>
-              )}
-            </div>
-          ))}
-
-          {/* Eingeblendete Zeichenleiste am unteren Videorand (auch im Vollbild) */}
-          {istCoachOderAdmin && zeichenBarSichtbar && (
-            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-sl-border bg-sl-canvas/90 px-2 py-1.5 backdrop-blur-sm">
-              {(
-                [
-                  { id: 'select', icon: MousePointer, title: 'Auswählen / Verschieben' },
-                  { id: 'freehand', icon: Pencil, title: 'Freihand' },
-                  { id: 'arrow', icon: ArrowUpRight, title: 'Pfeil' },
-                  { id: 'circle', icon: Circle, title: 'Kreis / Zone' },
-                  { id: 'spotlight', icon: Highlighter, title: 'Spotlight' },
-                  { id: 'text', icon: Type, title: 'Text' },
-                ] as const
-              ).map((tool) => {
-                const Icon = tool.icon;
-                return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    title={tool.title}
-                    onClick={() => setWerkzeug(tool.id)}
-                    className={`rounded-md p-1.5 transition-colors ${
-                      werkzeug === tool.id
-                        ? 'bg-sl-accent text-sl-accent-contrast'
-                        : 'text-sl-primary hover:bg-sl-elevated'
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                );
-              })}
-
-              <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
-
-              {FARBEN.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Farbe ${c}`}
-                  onClick={() => setFarbe(c)}
-                  className={`h-4 w-4 rounded-full border ${
-                    farbe === c ? 'border-sl-heading scale-110' : 'border-sl-border'
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-
-              <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
-
-              <button
-                type="button"
-                title="Letztes Element entfernen"
-                onClick={() => {
-                  const aktuell = frameTelestration?.elements ?? [];
-                  if (aktuell.length > 0) speichereZeichnung(aktuell.slice(0, -1));
+                src={aktiveQuelle.streamUrl}
+                preload="auto"
+                playsInline
+                muted
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (Number.isFinite(v.duration) && v.duration > 0) {
+                    setRealeClipDauerMs(Math.round(v.duration * 1000));
+                  }
+                  const startSek = Math.max(
+                    0,
+                    (playStartMs + effektiverOffset + letzteMsRef.current) / 1000
+                  );
+                  if (startSek > 0) {
+                    v.currentTime = startSek;
+                  }
+                  if (laeuft && v.paused) {
+                    v.playbackRate = tempo;
+                    v.play().catch((err: unknown) => {
+                      if (err instanceof DOMException && err.name === 'AbortError') return;
+                      setVideoFehler(err instanceof Error ? err.message : 'Videowiedergabe blockiert.');
+                      setLaeuft(false);
+                    });
+                  }
                 }}
-                className="rounded-md p-1.5 text-sl-muted hover:bg-sl-elevated hover:text-sl-heading"
+                onError={() =>
+                  setVideoFehler('Videodatei konnte vom S3-Stream nicht geladen werden.')
+                }
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,#18202B_0%,#07090C_75%)] text-center px-4">
+                <div className="font-mono text-2xl font-semibold text-white video-tabular">
+                  PLAY #{aktivesPlay.playNumber} · {aktiverWinkel}
+                </div>
+                <div className="mt-1 font-mono text-xs text-[#8B949E] video-tabular">
+                  {videoFehler ??
+                    `${aktiveQuelle?.fileName ?? 'Kein Video-Asset hinterlegt'} · ${formatiereFrameTimecode(aktuelleMs)} (25 fps)`}
+                </div>
+              </div>
+            )}
+
+            {/* Vektor-Canvas exakt auf Frame + Winkel */}
+            <TelestrationCanvas
+              elements={frameTelestration?.elements ?? []}
+              werkzeug={istCoachOderAdmin ? werkzeug : 'select'}
+              farbe={farbe}
+              visibility={sharingKonfig.enabled ? aktiveZielgruppe : 'ALL_PLAYERS'}
+              authorUuid={ctx.benutzer.uuid}
+              authorName={ctx.benutzer.vollerName}
+              readOnly={!istCoachOderAdmin}
+              selectedId={selectedElId}
+              onSelect={setSelectedElId}
+              onChange={speichereZeichnung}
+            />
+
+            {/* Coach-Autoren-Badge in freier Bildecke für Zeichnungen (#1) */}
+            {frameTelestration && frameTelestration.elements.length > 0 && (
+              <div
+                className={`pointer-events-none absolute z-20 inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas/85 px-2.5 py-1 text-[11px] text-sl-primary backdrop-blur-xs ${ECKEN_KLASSEN[freieAutorenEcke]}`}
               >
-                <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                title="Frame-Zeichnungen leeren"
-                onClick={() => speichereZeichnung([])}
-                className="rounded-md p-1.5 text-sl-muted hover:bg-sl-danger/15 hover:text-sl-danger-text"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </div>
-          )}
+                <Pencil className="h-3 w-3 text-sl-accent" aria-hidden="true" />
+                <span className="font-medium text-sl-heading">
+                  {frameZeichnungsAutoren.length > 0
+                    ? frameZeichnungsAutoren.join(', ')
+                    : 'Coach-Zeichnung'}
+                </span>
+                <span className="text-sl-muted video-tabular">
+                  · {frameTelestration.elements.length}
+                </span>
+              </div>
+            )}
+
+            {/* Kommentar-Overlay in frei wählbarer Bildecke */}
+            {frameNotizen.map((notiz) => {
+              const notizFarbe =
+                notiz.color ??
+                (sharingKonfig.enabled
+                  ? sharingKonfig.colorMap[notiz.visibility ?? 'ALL_PLAYERS']
+                  : undefined);
+              return (
+                <div
+                  key={notiz.id}
+                  className={`absolute z-20 w-72 rounded-lg border border-sl-border bg-sl-canvas/90 p-3 backdrop-blur-sm ${ECKEN_KLASSEN[notiz.cornerPosition]}`}
+                  style={notizFarbe ? { borderColor: `${notizFarbe}88` } : undefined}
+                >
+                  <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-sl-muted">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 truncate font-medium text-sl-accent">
+                      {notizFarbe && (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: notizFarbe }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="truncate">{notiz.authorName}</span>
+                      {sharingKonfig.enabled && (
+                        <span className="text-[10px] text-sl-muted">
+                          · {gruppenLabel(notiz.visibility)}
+                        </span>
+                      )}
+                      {notiz.status === 'DRAFT' && (
+                        <span className="text-[10px] text-sl-muted">· Entwurf</span>
+                      )}
+                    </span>
+                    {istCoachOderAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <select
+                          aria-label="Overlay-Ecke wählen"
+                          value={notiz.cornerPosition}
+                          onChange={(e) =>
+                            handleNotizUpdate(notiz, { cornerPosition: e.target.value as EckPosition })
+                          }
+                          className="rounded border border-sl-border bg-sl-surface px-1 py-0.5 text-[10px] text-sl-primary"
+                        >
+                          <option value="top-left">Oben L</option>
+                          <option value="top-right">Oben R</option>
+                          <option value="bottom-left">Unten L</option>
+                          <option value="bottom-right">Unten R</option>
+                        </select>
+                        <button
+                          type="button"
+                          title="Notiz löschen"
+                          onClick={() => handleNotizLoeschen(notiz.id)}
+                          className="rounded p-0.5 text-sl-muted hover:text-sl-danger-text"
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {editNotizId === notiz.id && istCoachOderAdmin ? (
+                    <div className="space-y-1.5">
+                      <textarea
+                        rows={2}
+                        value={notiz.text}
+                        onChange={(e) =>
+                          aktualisiereNotizenLokal((alt) =>
+                            alt.map((n) => (n.id === notiz.id ? { ...n, text: e.target.value } : n))
+                          )
+                        }
+                        className="w-full rounded border border-sl-accent bg-sl-surface p-1.5 text-xs text-sl-heading focus:outline-none"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={notiz.status}
+                            onChange={(e) =>
+                              handleNotizUpdate(notiz, { status: e.target.value as NotizStatus })
+                            }
+                            className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 text-[11px] text-sl-primary"
+                          >
+                            <option value="DRAFT">Entwurf</option>
+                            <option value="PUBLISHED">Veröffentlicht</option>
+                          </select>
+                          {sharingKonfig.enabled && (
+                            <select
+                              value={notiz.visibility ?? 'ALL_PLAYERS'}
+                              onChange={(e) => {
+                                const vis = e.target.value as SichtbarkeitsStufe;
+                                handleNotizUpdate(notiz, {
+                                  visibility: vis,
+                                  color: sharingKonfig.colorMap[vis],
+                                });
+                              }}
+                              className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 text-[11px] text-sl-primary"
+                            >
+                              {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.kurzDe}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await handleNotizUpdate(notiz, { text: notiz.text });
+                            setEditNotizId(null);
+                          }}
+                          className="rounded bg-sl-accent px-2 py-0.5 text-[11px] font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
+                        >
+                          Fertig
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p
+                      onClick={() => istCoachOderAdmin && setEditNotizId(notiz.id)}
+                      className={`text-xs leading-relaxed text-sl-primary ${
+                        istCoachOderAdmin ? 'cursor-text' : ''
+                      }`}
+                    >
+                      {notiz.text}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Vertikales Breakdown-Overlay über dem Video (#6, normal & Vollbild) */}
+            {breakdownOverlayOffen && (
+              <BreakdownOverlay
+                play={aktivesPlay}
+                vorherigesPlay={vorherigesPlay}
+                schema={schema}
+                teamRolle={ctx.aktiveTeamAnsicht}
+                erlaubteSpalten={aktivesReel.allowedFields}
+                hotkeyLabel={formatiereHotkeyAnzeige(hotkeys.toggleBreakdownOverlay)}
+                onClose={() => setBreakdownOverlayOffen(false)}
+                onUpdatePlay={handlePlayUpdate}
+                onSchemaLearn={handleSchemaLearn}
+              />
+            )}
+
+            {/* Eingeblendete Zeichenleiste am unteren Videorand (auch im Vollbild) */}
+            {istCoachOderAdmin && zeichenBarSichtbar && (
+              <div className="absolute bottom-3 left-1/2 z-20 flex max-w-[96%] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-lg border border-sl-border bg-sl-canvas/92 px-2 py-1.5 backdrop-blur-sm">
+                {(
+                  [
+                    { id: 'select', icon: MousePointer, title: 'Auswählen / Verschieben' },
+                    { id: 'freehand', icon: Pencil, title: 'Freihand' },
+                    { id: 'arrow', icon: ArrowUpRight, title: 'Pfeil' },
+                    { id: 'line', icon: Minus, title: 'Linie' },
+                    { id: 'block_line', icon: BlockLineIcon, title: 'Block-Linie (T-Ende)' },
+                    { id: 'dashed_line', icon: DashedLineIcon, title: 'Gestrichelte Linie' },
+                    { id: 'circle', icon: Circle, title: 'Kreis / Zone' },
+                    { id: 'spotlight', icon: Highlighter, title: 'Spotlight' },
+                    { id: 'text', icon: Type, title: 'Textbox' },
+                  ] as const
+                ).map((tool) => {
+                  const Icon = tool.icon;
+                  return (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      title={tool.title}
+                      onClick={() => setWerkzeug(tool.id)}
+                      className={`rounded-md p-1.5 transition-colors ${
+                        werkzeug === tool.id
+                          ? 'bg-sl-accent text-sl-accent-contrast'
+                          : 'text-sl-primary hover:bg-sl-elevated'
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  );
+                })}
+
+                <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
+
+                {sharingKonfig.enabled
+                  ? ANMERKUNGS_ZIELGRUPPEN.map((gruppe) => {
+                      const hex = sharingKonfig.colorMap[gruppe.id];
+                      const aktiv = aktiveZielgruppe === gruppe.id;
+                      return (
+                        <button
+                          key={gruppe.id}
+                          type="button"
+                          title={`Zielgruppe: ${gruppe.labelDe} (${hex})`}
+                          onClick={() => {
+                            setAktiveZielgruppe(gruppe.id);
+                            setNotizZielgruppe(gruppe.id);
+                            setFarbe(hex);
+                          }}
+                          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors whitespace-nowrap ${
+                            aktiv
+                              ? 'bg-sl-elevated text-sl-heading ring-1 ring-sl-accent/70'
+                              : 'text-sl-muted hover:bg-sl-elevated/60 hover:text-sl-primary'
+                          }`}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full border border-black/30 shrink-0"
+                            style={{ backgroundColor: hex }}
+                            aria-hidden="true"
+                          />
+                          <span>{gruppe.kurzDe}</span>
+                        </button>
+                      );
+                    })
+                  : KLASSISCHE_FARBEN.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-label={`Farbe ${c}`}
+                        onClick={() => setFarbe(c)}
+                        className={`h-4 w-4 rounded-full border ${
+                          farbe === c ? 'border-sl-heading scale-110' : 'border-sl-border'
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+
+                <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
+
+                <button
+                  type="button"
+                  disabled={!selectedElId}
+                  title={`Ausgewählte Einzeichnung löschen (${formatiereHotkeyAnzeige(hotkeys.deleteAnnotation)})`}
+                  onClick={loescheAusgewaehlteZeichnung}
+                  className="rounded-md p-1.5 text-sl-muted hover:bg-sl-danger/15 hover:text-sl-danger-text disabled:opacity-35"
+                >
+                  <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title="Letztes Element entfernen"
+                  onClick={() => {
+                    const aktuell = frameTelestration?.elements ?? [];
+                    if (aktuell.length > 0) void speichereZeichnung(aktuell.slice(0, -1));
+                  }}
+                  className="rounded-md p-1.5 text-sl-muted hover:bg-sl-elevated hover:text-sl-heading"
+                >
+                  <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title="Alle Frame-Zeichnungen leeren"
+                  onClick={() => {
+                    setSelectedElId(null);
+                    void speichereZeichnung([]);
+                  }}
+                  className="rounded-md p-1.5 text-sl-muted hover:bg-sl-danger/15 hover:text-sl-danger-text"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -795,18 +1155,15 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                title={`Vorheriger Spielzug (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).prevPlay)})`}
-                onClick={() => {
-                  const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-                  if (idx > 0) handlePlayWechsel(sichtbarePlays[idx - 1].id);
-                }}
+                title={`Clip-Beginn / Vorheriger Spielzug (${formatiereHotkeyAnzeige(hotkeys.prevPlay)})`}
+                onClick={handlePrevPlayOderClipStart}
                 className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 <SkipBack className="h-4 w-4" aria-hidden="true" />
               </button>
               <button
                 type="button"
-                title={`-1 Frame (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepBack)})`}
+                title={`-1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepBack)})`}
                 onClick={() => {
                   setLaeuft(false);
                   springeZuMs(aktuelleMs - FRAME_MS);
@@ -817,7 +1174,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
               <button
                 type="button"
-                title={`Wiedergabe / Pause (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause)})`}
+                title={`Wiedergabe / Pause (${formatiereHotkeyAnzeige(hotkeys.playPause)})`}
                 onClick={() => setLaeuft((v) => !v)}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-sl-accent text-sl-accent-contrast hover:bg-sl-accent-hover"
               >
@@ -829,7 +1186,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
               <button
                 type="button"
-                title={`+1 Frame (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepForward)})`}
+                title={`+1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepForward)})`}
                 onClick={() => {
                   setLaeuft(false);
                   springeZuMs(aktuelleMs + FRAME_MS);
@@ -840,11 +1197,10 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
               <button
                 type="button"
-                title={`Nächster Spielzug (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).nextPlay)})`}
+                title={`Nächster Spielzug (${formatiereHotkeyAnzeige(hotkeys.nextPlay)})`}
                 onClick={() => {
-                  const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
-                  if (idx >= 0 && idx < sichtbarePlays.length - 1) {
-                    handlePlayWechsel(sichtbarePlays[idx + 1].id);
+                  if (aktivesPlayIndex >= 0 && aktivesPlayIndex < sichtbarePlays.length - 1) {
+                    handlePlayWechsel(sichtbarePlays[aktivesPlayIndex + 1].id);
                   }
                 }}
                 className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
@@ -853,18 +1209,53 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </button>
             </div>
 
-            <input
-              type="range"
-              min={0}
-              max={Math.max(FRAME_MS, effektiveDauerMs)}
-              step={FRAME_MS}
-              value={Math.min(aktuelleMs, Math.max(FRAME_MS, effektiveDauerMs))}
-              onChange={(e) => {
-                setLaeuft(false);
-                springeZuMs(Number(e.target.value));
-              }}
-              className="h-1.5 flex-1 min-w-[160px] accent-sl-accent"
-            />
+            {/* Scrubber inkl. klickbarer Anmerkungs-Marker (#1) */}
+            <div className="relative flex flex-1 min-w-[160px] items-center py-2">
+              <input
+                type="range"
+                min={0}
+                max={Math.max(FRAME_MS, effektiveDauerMs)}
+                step={FRAME_MS}
+                value={Math.min(aktuelleMs, Math.max(FRAME_MS, effektiveDauerMs))}
+                onChange={(e) => {
+                  setLaeuft(false);
+                  springeZuMs(Number(e.target.value));
+                }}
+                className="relative z-10 h-1.5 w-full accent-sl-accent"
+              />
+              {timelineMarker.map((marker) => {
+                const ms = frameIndexZuMs(marker.frameIndex);
+                const prozent = Math.min(
+                  99,
+                  Math.max(1, (ms / Math.max(FRAME_MS, effektiveDauerMs)) * 100)
+                );
+                const art = [
+                  marker.hasDrawing ? 'Zeichnung' : null,
+                  marker.hasNote ? 'Notiz' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' & ');
+                const autorText = marker.authors.length > 0 ? ` · ${marker.authors.join(', ')}` : '';
+                return (
+                  <button
+                    key={marker.frameIndex}
+                    type="button"
+                    title={`Frame ${marker.frameIndex} (${formatiereFrameTimecode(ms)}) · ${art}${autorText}`}
+                    onClick={() => {
+                      setLaeuft(false);
+                      videoRef.current?.pause();
+                      springeZuMs(ms);
+                    }}
+                    className="absolute top-0.5 z-20 h-3 w-2 -translate-x-1/2 rounded-xs border border-sl-canvas transition-transform hover:scale-125"
+                    style={{
+                      left: `${prozent}%`,
+                      backgroundColor: marker.primaryColor,
+                    }}
+                    aria-label={`Zu Anmerkung bei Frame ${marker.frameIndex} springen`}
+                  />
+                );
+              })}
+            </div>
 
             <div className="flex items-center gap-2 text-xs">
               <select
@@ -890,8 +1281,21 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </label>
               <button
                 type="button"
+                onClick={toggleBreakdownOverlay}
+                title={`${t('breakdownOverlayTitle')} (${formatiereHotkeyAnzeige(hotkeys.toggleBreakdownOverlay)})`}
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap ${
+                  breakdownOverlayOffen
+                    ? 'bg-sl-accent text-sl-accent-contrast'
+                    : 'text-sl-primary hover:bg-sl-elevated'
+                }`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Breakdown</span>
+              </button>
+              <button
+                type="button"
                 onClick={toggleVollbild}
-                title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen)})`}
+                title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige(hotkeys.toggleFullscreen)})`}
                 className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 {istVollbild ? (
@@ -906,15 +1310,19 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           {/* Hotkey-Leiste (immer sichtbar für schnelle Tastaturbedienung, besonders im Vollbild) */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sl-border/70 bg-sl-canvas/70 px-4 py-1.5 text-[11px] text-sl-muted">
             {[
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause, label: 'Play/Pause' },
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepBack, label: '-1 Frame' },
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepForward, label: '+1 Frame' },
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).prevPlay, label: 'Vorheriger Play' },
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).nextPlay, label: 'Nächster Play' },
+              { key: hotkeys.playPause, label: 'Play/Pause' },
+              { key: hotkeys.stepBack, label: '-1 Frame' },
+              { key: hotkeys.stepForward, label: '+1 Frame' },
+              { key: hotkeys.prevPlay, label: 'Clip-Start / Vorheriger' },
+              { key: hotkeys.nextPlay, label: 'Nächster Play' },
+              { key: hotkeys.toggleBreakdownOverlay, label: 'Breakdown' },
               ...(istCoachOderAdmin
-                ? [{ key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleDraw, label: 'Zeichnen' }]
+                ? [
+                    { key: hotkeys.toggleDraw, label: 'Zeichnen' },
+                    { key: hotkeys.deleteAnnotation, label: 'Auswahl löschen' },
+                  ]
                 : []),
-              { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen, label: 'Vollbild' },
+              { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
             ].map((item) => (
               <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
                 <kbd className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
@@ -930,8 +1338,30 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       {/* Schnelle Coach-Notiz am aktuellen Frame */}
       {istCoachOderAdmin && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sl-border bg-sl-surface p-3">
-          <MessageSquarePlus className="h-4 w-4 text-sl-accent" aria-hidden="true" />
+          <MessageSquarePlus className="h-4 w-4 shrink-0 text-sl-accent" aria-hidden="true" />
+          {sharingKonfig.enabled && (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="h-2.5 w-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: sharingKonfig.colorMap[notizZielgruppe] }}
+                aria-hidden="true"
+              />
+              <select
+                aria-label="Zielgruppe der Coach-Notiz"
+                value={notizZielgruppe}
+                onChange={(e) => setNotizZielgruppe(e.target.value as SichtbarkeitsStufe)}
+                className="rounded-md border border-sl-border bg-sl-canvas px-2 py-1 text-xs text-sl-heading focus:border-sl-accent focus:outline-none"
+              >
+                {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.labelDe}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <input
+            ref={notizInputRef}
             type="text"
             value={notizEntwurfText}
             onChange={(e) => setNotizEntwurfText(e.target.value)}
@@ -949,20 +1379,16 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         </div>
       )}
 
-      {/* Hudl Breakdown Grid */}
+      {/* Hudl Breakdown Grid inkl. Anmerkungs-Symbolen (#1) */}
       <BreakdownGrid
         plays={sichtbarePlays}
         aktivesPlayId={aktivesPlay.id}
         schema={schema}
         teamRolle={ctx.aktiveTeamAnsicht}
         erlaubteSpalten={aktivesReel.allowedFields}
+        anmerkungenProPlay={playAnmerkungen}
         onSelectPlay={handlePlayWechsel}
-        onUpdatePlay={async (playId, breakdown: PlayBreakdownDaten) => {
-          aktualisierePlaysLokal((alt) =>
-            alt.map((p) => (p.id === playId ? { ...p, breakdown } : p))
-          );
-          await videoApi.aktualisierePlay(ctx.team.id, playId, { breakdown });
-        }}
+        onUpdatePlay={handlePlayUpdate}
         onAddPlay={
           istCoachOderAdmin
             ? async () => {
@@ -994,10 +1420,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               }
             : undefined
         }
-        onSchemaLearn={async (nextSchema) => {
-          setTeamSchema(nextSchema);
-          await videoApi.speichereSchema(ctx.team.id, nextSchema);
-        }}
+        onSchemaLearn={handleSchemaLearn}
       />
     </section>
   );

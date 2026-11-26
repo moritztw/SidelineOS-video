@@ -22,6 +22,7 @@ export function TeamShareModal({
   const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
   const alleFelder = schema.fields.filter((f) => f.aktiv);
 
+  const [includeMetadata, setIncludeMetadata] = useState(true);
   const [ausgewaehlteFelder, setAusgewaehlteFelder] = useState<string[]>(
     alleFelder.map((f) => f.key)
   );
@@ -49,7 +50,7 @@ export function TeamShareModal({
     if (!targetTeamId.trim()) return;
     await videoApi.teileAnTeam(ctx.team.id, reel.id, {
       targetTeamId: targetTeamId.trim(),
-      allowedFields: ausgewaehlteFelder,
+      allowedFields: includeMetadata ? ausgewaehlteFelder : [],
     });
     setHinweis(`Reel an Team "${targetTeamId.trim()}" geteilt (Coach-Notizen & Zeichnungen bleiben privat).`);
     setTargetTeamId('');
@@ -58,7 +59,8 @@ export function TeamShareModal({
   const handleLinkErstellen = async () => {
     const res = await videoApi.erstelleShareLink(ctx.team.id, reel.id, {
       label: linkLabel,
-      allowedFields: ausgewaehlteFelder,
+      includeMetadata,
+      allowedFields: includeMetadata ? ausgewaehlteFelder : [],
       expiresInDays: laufzeitTage,
     });
     setLinks((alt) => [res.link, ...alt]);
@@ -89,39 +91,50 @@ export function TeamShareModal({
           </button>
         </div>
 
-        {/* Granulare Spaltenauswahl */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-sl-heading">
-              Freigegebene Breakdown-Spalten (Coach-Notizen &amp; Zeichnungen bleiben immer privat)
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setAusgewaehlteFelder(
-                  ausgewaehlteFelder.length === alleFelder.length
-                    ? []
-                    : alleFelder.map((f) => f.key)
-                )
-              }
-              className="text-sl-accent hover:underline"
-            >
-              Alle umschalten
-            </button>
+        {/* Option: Metadaten mit freigeben (#8) */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <label className="inline-flex items-center gap-2 font-semibold text-sl-heading">
+              <input
+                type="checkbox"
+                checked={includeMetadata}
+                onChange={(e) => setIncludeMetadata(e.target.checked)}
+                className="accent-sl-accent"
+              />
+              Breakdown-Metadaten mit freigeben (Coach-Notizen &amp; Zeichnungen bleiben immer privat)
+            </label>
+            {includeMetadata && (
+              <button
+                type="button"
+                onClick={() =>
+                  setAusgewaehlteFelder(
+                    ausgewaehlteFelder.length === alleFelder.length
+                      ? []
+                      : alleFelder.map((f) => f.key)
+                  )
+                }
+                className="text-sl-accent hover:underline"
+              >
+                Alle umschalten
+              </button>
+            )}
           </div>
-          <div className="grid grid-cols-3 gap-2 rounded-lg border border-sl-border bg-sl-canvas p-3 sm:grid-cols-4">
-            {alleFelder.map((feld) => (
-              <label key={feld.key} className="inline-flex items-center gap-1.5 text-xs text-sl-primary">
-                <input
-                  type="checkbox"
-                  checked={ausgewaehlteFelder.includes(feld.key)}
-                  onChange={() => toggleFeld(feld.key)}
-                  className="accent-sl-accent"
-                />
-                <span className="truncate">{feld.label}</span>
-              </label>
-            ))}
-          </div>
+
+          {includeMetadata && (
+            <div className="grid grid-cols-3 gap-2 rounded-lg border border-sl-border bg-sl-canvas p-3 sm:grid-cols-4">
+              {alleFelder.map((feld) => (
+                <label key={feld.key} className="inline-flex items-center gap-1.5 text-xs text-sl-primary">
+                  <input
+                    type="checkbox"
+                    checked={ausgewaehlteFelder.includes(feld.key)}
+                    onChange={() => toggleFeld(feld.key)}
+                    className="accent-sl-accent"
+                  />
+                  <span className="truncate">{feld.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Team-zu-Team-Austausch */}
@@ -141,7 +154,7 @@ export function TeamShareModal({
             <button
               type="button"
               onClick={handleTeamShare}
-              className="rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
+              className="rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong whitespace-nowrap"
             >
               An Team teilen
             </button>
@@ -173,7 +186,7 @@ export function TeamShareModal({
             <button
               type="button"
               onClick={handleLinkErstellen}
-              className="rounded-md bg-sl-accent px-3 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
+              className="rounded-md bg-sl-accent px-3 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover whitespace-nowrap"
             >
               Link erzeugen
             </button>
@@ -182,7 +195,7 @@ export function TeamShareModal({
           {neuerToken && (
             <div className="flex items-center justify-between gap-2 rounded-md border border-sl-accent/50 bg-sl-surface px-3 py-2 text-xs">
               <code className="truncate font-mono text-sl-accent">/share/{neuerToken}</code>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() =>
@@ -210,10 +223,10 @@ export function TeamShareModal({
               {links.map((l) => (
                 <div
                   key={l.id}
-                  className="flex items-center justify-between text-xs text-sl-muted"
+                  className="flex items-center justify-between gap-2 text-xs text-sl-muted"
                 >
                   <span>
-                    {l.label} · läuft ab {l.expiresAt.slice(0, 10)}{' '}
+                    {l.label} · {l.includeMetadata === false ? 'Nur Video' : `${l.allowedFields.length} Felder`} · läuft ab {l.expiresAt.slice(0, 10)}{' '}
                     {l.revokedAt ? '(widerrufen)' : ''}
                   </span>
                   {!l.revokedAt && (
@@ -227,7 +240,7 @@ export function TeamShareModal({
                           )
                         );
                       }}
-                      className="inline-flex items-center gap-1 text-sl-danger-text hover:underline"
+                      className="inline-flex items-center gap-1 text-sl-danger-text hover:underline whitespace-nowrap"
                     >
                       <Trash2 className="h-3 w-3" aria-hidden="true" /> Widerrufen
                     </button>

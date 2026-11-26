@@ -4,6 +4,7 @@ import { createPluginTranslator, filtereNachSaison } from '@sidelineos/plugin-sd
 import {
   Download,
   Film,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -16,6 +17,7 @@ import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
 import { videoApi } from '../services/apiClient';
 import { konvertiereReelZuSidelineBundle } from '../services/bundleSchema';
 import type { SichtbarkeitsStufe, VideoKategorie, VideoReelEintrag } from '../types/video';
+import { ReelEditModal } from './ReelEditModal';
 import { TeamShareModal } from './TeamShareModal';
 
 const KATEGORIEN: Array<{ id: 'ALL' | VideoKategorie; labelKey: string }> = [
@@ -41,6 +43,7 @@ export function DashboardView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     laedtReels,
     fehler,
     setFehler,
+    ladeBasisDaten,
     oeffneReel,
     setUploadModalOffen,
     setReels,
@@ -50,6 +53,7 @@ export function DashboardView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const [suche, setSuche] = useState('');
   const [kategorie, setKategorie] = useState<'ALL' | VideoKategorie>('ALL');
   const [shareReel, setShareReel] = useState<VideoReelEintrag | null>(null);
+  const [editReel, setEditReel] = useState<VideoReelEintrag | null>(null);
 
   const istCoachOderAdmin =
     ctx.aktiveTeamAnsicht === 'COACH' || ctx.aktiveTeamAnsicht === 'TEAM_ADMIN';
@@ -289,6 +293,16 @@ export function DashboardView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   {istCoachOderAdmin && (
                     <button
                       type="button"
+                      title={t('editReel')}
+                      onClick={() => setEditReel(reel)}
+                      className="rounded-md p-2 text-sl-muted transition-colors hover:bg-sl-elevated hover:text-sl-heading"
+                    >
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                  {istCoachOderAdmin && (
+                    <button
+                      type="button"
                       title={t('openSyncCut')}
                       onClick={async () => {
                         await oeffneReel(ctx.team.id, reel.id);
@@ -339,6 +353,17 @@ export function DashboardView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           ctx={ctx}
           reel={shareReel}
           onSchliessen={() => setShareReel(null)}
+        />
+      )}
+
+      {editReel && (
+        <ReelEditModal
+          ctx={ctx}
+          reel={editReel}
+          onSchliessen={() => setEditReel(null)}
+          onGespeichert={async () => {
+            await ladeBasisDaten(ctx.team.id, ctx.gewaehlteSaison, ctx.benutzer.uuid);
+          }}
         />
       )}
     </section>

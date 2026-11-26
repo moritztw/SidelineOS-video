@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
 import type {
   Punkt2D,
+  SichtbarkeitsStufe,
   TelestrationElement,
   TelestrationWerkzeug,
 } from '../types/video';
@@ -9,6 +10,9 @@ interface TelestrationCanvasProps {
   elements: TelestrationElement[];
   werkzeug: TelestrationWerkzeug;
   farbe: string;
+  visibility?: SichtbarkeitsStufe;
+  authorUuid?: string;
+  authorName?: string;
   readOnly: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -20,8 +24,24 @@ type Groesse = { width: number; height: number };
 type DragZustand =
   | { typ: 'neu'; start: Punkt2D; elementId: string }
   | { typ: 'verschieben'; id: string; letzterPunkt: Punkt2D }
-  | { typ: 'pfeil_start'; id: string }
-  | { typ: 'pfeil_ende'; id: string };
+  | { typ: 'linie_start'; id: string }
+  | { typ: 'linie_ende'; id: string };
+
+const STANDARD_STRICH_STAERKE = 0.0028;
+
+function istLinienElement(
+  el: TelestrationElement
+): el is Extract<
+  TelestrationElement,
+  { type: 'arrow' | 'line' | 'block_line' | 'dashed_line' }
+> {
+  return (
+    el.type === 'arrow' ||
+    el.type === 'line' ||
+    el.type === 'block_line' ||
+    el.type === 'dashed_line'
+  );
+}
 
 function clamp01(val: number): number {
   return Math.max(0, Math.min(1, val));
@@ -50,7 +70,10 @@ function trefferTestPx(el: TelestrationElement, pPx: Punkt2D, groesse: Groesse):
       const dy = (pPx.y - c.y) / ry;
       return dx * dx + dy * dy <= 1.25;
     }
-    case 'arrow': {
+    case 'arrow':
+    case 'line':
+    case 'block_line':
+    case 'dashed_line': {
       const s = zuPx(el.start, groesse);
       const e = zuPx(el.end, groesse);
       const len = abstandPx(s, e);
@@ -83,6 +106,9 @@ export function TelestrationCanvas({
   elements,
   werkzeug,
   farbe,
+  visibility,
+  authorUuid,
+  authorName,
   readOnly,
   selectedId,
   onSelect,
@@ -125,7 +151,6 @@ export function TelestrationCanvas({
 
   const handleContainerPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (readOnly) return;
-    // Eingabefeld-Klicks nicht abfangen
     if ((e.target as HTMLElement).closest('[data-telestration-input="true"]')) return;
 
     const p = holeNormalisiert(e.clientX, e.clientY);
@@ -133,14 +158,14 @@ export function TelestrationCanvas({
 
     if (werkzeug === 'select') {
       const selektiert = elements.find((el) => el.id === selectedId);
-      if (selektiert && selektiert.type === 'arrow') {
+      if (selektiert && istLinienElement(selektiert)) {
         if (abstandPx(zuPx(selektiert.start, groesse), pPx) <= 14) {
-          setDrag({ typ: 'pfeil_start', id: selektiert.id });
+          setDrag({ typ: 'linie_start', id: selektiert.id });
           e.currentTarget.setPointerCapture(e.pointerId);
           return;
         }
         if (abstandPx(zuPx(selektiert.end, groesse), pPx) <= 14) {
-          setDrag({ typ: 'pfeil_ende', id: selektiert.id });
+          setDrag({ typ: 'linie_ende', id: selektiert.id });
           e.currentTarget.setPointerCapture(e.pointerId);
           return;
         }
@@ -163,23 +188,36 @@ export function TelestrationCanvas({
     }
 
     const id = `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const basisMeta = {
+      id,
+      color: farbe,
+      strokeWidth: STANDARD_STRICH_STAERKE,
+      ...(visibility ? { visibility } : {}),
+      ...(authorUuid ? { authorUuid } : {}),
+      ...(authorName ? { authorName } : {}),
+    };
+
     let neu: TelestrationElement;
     if (werkzeug === 'freehand') {
-      neu = { id, type: 'freehand', color: farbe, strokeWidth: 0.005, points: [p] };
+      neu = { ...basisMeta, type: 'freehand', points: [p] };
     } else if (werkzeug === 'arrow') {
-      neu = { id, type: 'arrow', color: farbe, strokeWidth: 0.005, start: p, end: p };
+      neu = { ...basisMeta, type: 'arrow', start: p, end: p };
+    } else if (werkzeug === 'line') {
+      neu = { ...basisMeta, type: 'line', start: p, end: p };
+    } else if (werkzeug === 'block_line') {
+      neu = { ...basisMeta, type: 'block_line', start: p, end: p };
+    } else if (werkzeug === 'dashed_line') {
+      neu = { ...basisMeta, type: 'dashed_line', start: p, end: p };
     } else if (werkzeug === 'circle') {
       neu = {
-        id,
+        ...basisMeta,
         type: 'circle',
-        color: farbe,
-        strokeWidth: 0.005,
         center: p,
         radiusX: 0.01,
         radiusY: 0.01,
       };
     } else {
-      neu = { id, type: 'spotlight', color: farbe, strokeWidth: 0.004, center: p, radius: 0.07 };
+      neu = { ...basisMeta, type: 'spotlight', center: p, radius: 0.07 };
     }
 
     onChange([...elements, neu]);
@@ -192,19 +230,19 @@ export function TelestrationCanvas({
     if (!drag || readOnly) return;
     const p = holeNormalisiert(e.clientX, e.clientY);
 
-    if (drag.typ === 'pfeil_start') {
+    if (drag.typ === 'linie_start') {
       onChange(
         elements.map((el) =>
-          el.id === drag.id && el.type === 'arrow' ? { ...el, start: p } : el
+          el.id === drag.id && istLinienElement(el) ? { ...el, start: p } : el
         )
       );
       return;
     }
 
-    if (drag.typ === 'pfeil_ende') {
+    if (drag.typ === 'linie_ende') {
       onChange(
         elements.map((el) =>
-          el.id === drag.id && el.type === 'arrow' ? { ...el, end: p } : el
+          el.id === drag.id && istLinienElement(el) ? { ...el, end: p } : el
         )
       );
       return;
@@ -225,6 +263,9 @@ export function TelestrationCanvas({
                 center: { x: clamp01(el.center.x + dx), y: clamp01(el.center.y + dy) },
               };
             case 'arrow':
+            case 'line':
+            case 'block_line':
+            case 'dashed_line':
               return {
                 ...el,
                 start: { x: clamp01(el.start.x + dx), y: clamp01(el.start.y + dy) },
@@ -256,7 +297,7 @@ export function TelestrationCanvas({
         if (el.type === 'freehand') {
           return { ...el, points: [...el.points, p] };
         }
-        if (el.type === 'arrow') {
+        if (istLinienElement(el)) {
           return { ...el, end: p };
         }
         if (el.type === 'circle') {
@@ -306,6 +347,9 @@ export function TelestrationCanvas({
           type: 'text',
           color: farbe,
           strokeWidth: 0.002,
+          ...(visibility ? { visibility } : {}),
+          ...(authorUuid ? { authorUuid } : {}),
+          ...(authorName ? { authorName } : {}),
           position: textEingabe.pos,
           text: bereinigt,
         },
@@ -372,7 +416,8 @@ export function TelestrationCanvas({
         {elements.map((el) => {
           if (el.type === 'text') return null;
           const istSelektiert = el.id === selectedId && !readOnly;
-          const strokePx = Math.max(2, Math.round(el.strokeWidth * minDim * 1.4));
+          // Feinere Strichstärke (#4): schlank und präzise auch bei großen Monitoren
+          const strokePx = Math.max(1.8, Math.min(4.5, el.strokeWidth * minDim * 1.05));
 
           if (el.type === 'freehand') {
             const d = el.points
@@ -390,43 +435,97 @@ export function TelestrationCanvas({
                 strokeWidth={strokePx}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                opacity={istSelektiert ? 0.8 : 1}
+                opacity={istSelektiert ? 0.78 : 1}
               />
             );
           }
 
-          if (el.type === 'arrow') {
+          if (istLinienElement(el)) {
             const s = zuPx(el.start, groesse);
             const e = zuPx(el.end, groesse);
+            const len = abstandPx(s, e);
             const angle = Math.atan2(e.y - s.y, e.x - s.x);
-            const headLen = Math.max(12, strokePx * 3.4);
+
+            // Pfeilspitze kompakter & schlanker (#4)
+            const headLen = Math.max(8, Math.min(14, strokePx * 3.1));
+            const shaftEnd =
+              el.type === 'arrow' && len > headLen * 0.8
+                ? {
+                    x: e.x - headLen * 0.75 * Math.cos(angle),
+                    y: e.y - headLen * 0.75 * Math.sin(angle),
+                  }
+                : e;
+
             const p1 = {
-              x: e.x - headLen * Math.cos(angle - Math.PI / 6),
-              y: e.y - headLen * Math.sin(angle - Math.PI / 6),
+              x: e.x - headLen * Math.cos(angle - Math.PI / 7),
+              y: e.y - headLen * Math.sin(angle - Math.PI / 7),
             };
             const p2 = {
-              x: e.x - headLen * Math.cos(angle + Math.PI / 6),
-              y: e.y - headLen * Math.sin(angle + Math.PI / 6),
+              x: e.x - headLen * Math.cos(angle + Math.PI / 7),
+              y: e.y - headLen * Math.sin(angle + Math.PI / 7),
             };
+
+            // T-Balken für Block-Linie (senkrecht zum Ende)
+            const tHalf = Math.max(7, Math.min(13, strokePx * 2.8));
+            const perpAngle = angle + Math.PI / 2;
+            const t1 = {
+              x: e.x + tHalf * Math.cos(perpAngle),
+              y: e.y + tHalf * Math.sin(perpAngle),
+            };
+            const t2 = {
+              x: e.x - tHalf * Math.cos(perpAngle),
+              y: e.y - tHalf * Math.sin(perpAngle),
+            };
+
             return (
               <g key={el.id}>
+                {istSelektiert && (
+                  <line
+                    x1={s.x}
+                    y1={s.y}
+                    x2={e.x}
+                    y2={e.y}
+                    stroke="#FFFFFF"
+                    strokeOpacity={0.35}
+                    strokeWidth={strokePx + 5}
+                    strokeLinecap="round"
+                  />
+                )}
                 <line
                   x1={s.x}
                   y1={s.y}
-                  x2={e.x}
-                  y2={e.y}
+                  x2={shaftEnd.x}
+                  y2={shaftEnd.y}
                   stroke={el.color}
                   strokeWidth={strokePx}
                   strokeLinecap="round"
+                  strokeDasharray={
+                    el.type === 'dashed_line'
+                      ? `${Math.round(strokePx * 3.2)} ${Math.round(strokePx * 2.2)}`
+                      : undefined
+                  }
                 />
-                <polygon
-                  points={`${e.x},${e.y} ${p1.x},${p1.y} ${p2.x},${p2.y}`}
-                  fill={el.color}
-                />
+                {el.type === 'arrow' && len > 2 && (
+                  <polygon
+                    points={`${e.x},${e.y} ${p1.x},${p1.y} ${p2.x},${p2.y}`}
+                    fill={el.color}
+                  />
+                )}
+                {el.type === 'block_line' && len > 2 && (
+                  <line
+                    x1={t1.x}
+                    y1={t1.y}
+                    x2={t2.x}
+                    y2={t2.y}
+                    stroke={el.color}
+                    strokeWidth={strokePx * 1.15}
+                    strokeLinecap="round"
+                  />
+                )}
                 {istSelektiert && (
                   <>
-                    <circle cx={s.x} cy={s.y} r={6} fill="#FFFFFF" stroke="#0B0E11" strokeWidth={2} />
-                    <circle cx={e.x} cy={e.y} r={6} fill="#F59E0B" stroke="#0B0E11" strokeWidth={2} />
+                    <circle cx={s.x} cy={s.y} r={5} fill="#FFFFFF" stroke="#0B0E11" strokeWidth={1.75} />
+                    <circle cx={e.x} cy={e.y} r={5} fill="#F59E0B" stroke="#0B0E11" strokeWidth={1.75} />
                   </>
                 )}
               </g>
@@ -445,7 +544,7 @@ export function TelestrationCanvas({
                 fill="none"
                 stroke={el.color}
                 strokeWidth={strokePx}
-                strokeDasharray={istSelektiert ? '8 6' : undefined}
+                strokeDasharray={istSelektiert ? '7 5' : undefined}
               />
             );
           }

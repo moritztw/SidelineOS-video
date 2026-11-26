@@ -4,8 +4,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import zlib from 'node:zlib';
+import { build as esbuild } from 'esbuild';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
+
+async function ladeTsModul(relPfad) {
+  const res = await esbuild({
+    entryPoints: [path.join(ROOT_DIR, relPfad)],
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'node',
+    target: ['node22'],
+    external: ['@sidelineos/plugin-sdk'],
+  });
+  const code = res.outputFiles[0].text;
+  const dataUrl = `data:text/javascript;base64,${Buffer.from(code, 'utf8').toString('base64')}`;
+  return import(dataUrl);
+}
 
 const RESERVIERTE_PLUGIN_IDS = new Set([
   'hub',
@@ -104,24 +120,28 @@ test('dist/client.js, dist/client.css und dist/server.js erfüllen die Core-Vert
   assert.equal(typeof backend.listExportableItems, 'function');
   assert.equal(typeof backend.exportScope, 'function');
   assert.equal(typeof backend.importScope, 'function');
-  assert.ok(Array.isArray(backend.migrations) && backend.migrations.length >= 1);
+  assert.ok(Array.isArray(backend.migrations) && backend.migrations.length >= 2);
 });
 
-test('Release-Packaging erzeugt valides USTAR .tar.gz inkl. dist/ und migrations/', async () => {
+test('Release-Packaging erzeugt valides USTAR .tar.gz inkl. dist/ und aller migrations/', async () => {
   const { erzeugeTarGzBuffer } = await import(path.join(ROOT_DIR, 'scripts/pack.mjs'));
 
   const manifestBuf = await fs.readFile(path.join(ROOT_DIR, 'plugin.manifest.json'));
   const clientBuf = await fs.readFile(path.join(ROOT_DIR, 'dist/client.js'));
   const cssBuf = await fs.readFile(path.join(ROOT_DIR, 'dist/client.css'));
   const serverBuf = await fs.readFile(path.join(ROOT_DIR, 'dist/server.js'));
-  const migBuf = await fs.readFile(path.join(ROOT_DIR, 'migrations/001_video_schema.sql'));
+  const mig1Buf = await fs.readFile(path.join(ROOT_DIR, 'migrations/001_video_schema.sql'));
+  const mig2Buf = await fs.readFile(
+    path.join(ROOT_DIR, 'migrations/002_video_annotations_and_sharing.sql')
+  );
 
   const gz = erzeugeTarGzBuffer({
     'plugin.manifest.json': manifestBuf,
     'dist/client.css': cssBuf,
     'dist/client.js': clientBuf,
     'dist/server.js': serverBuf,
-    'migrations/001_video_schema.sql': migBuf,
+    'migrations/001_video_schema.sql': mig1Buf,
+    'migrations/002_video_annotations_and_sharing.sql': mig2Buf,
   });
 
   const sha = crypto.createHash('sha256').update(gz).digest('hex');
@@ -154,7 +174,228 @@ test('Release-Packaging erzeugt valides USTAR .tar.gz inkl. dist/ und migrations
     'dist/client.js',
     'dist/server.js',
     'migrations/001_video_schema.sql',
+    'migrations/002_video_annotations_and_sharing.sql',
   ]);
+});
+
+test('Hotkeys (#3): Scoped Konfliktprüfung, Modifier-Kombinationen & Clip-Start-Logik', async () => {
+  const mod = await ladeTsModul('src/services/frameAndHotkeys.ts');
+
+  // Modifier-Kombinationen normalisieren & matchen
+  assert.equal(mod.normalisiereTaste('ctrl+shift+arrowleft'), 'Ctrl+Shift+ArrowLeft');
+  assert.equal(mod.formatiereHotkeyAnzeige('Ctrl+Shift+KeyB'), 'Strg + Shift + B');
+  assert.equal(
+    mod.matchesHotkeyEvent({ code: 'KeyB', ctrlKey: true, shiftKey: true }, 'Ctrl+Shift+KeyB'),
+    true
+  );
+  assert.equal(
+    mod.matchesHotkeyEvent({ code: 'KeyB', ctrlKey: false, shiftKey: false }, 'Ctrl+Shift+KeyB'),
+    false
+  );
+  assert.equal(mod.kombinationAusKeyboardEvent({ code: 'ShiftLeft', shiftKey: true }), null);
+
+  // Scoped Konflikte: FILM_ROOM und FAST_CUT dürfen sich Tasten teilen, GLOBAL blockiert beide
+  assert.equal(mod.habenHotkeyKonfliktScope('toggleDraw', 'markCut'), false);
+  assert.equal(mod.habenHotkeyKonfliktScope('playPause', 'markCut'), true);
+  assert.equal(mod.habenHotkeyKonfliktScope('toggleDraw', 'toggleBreakdownOverlay'), true);
+
+  const okShared = mod.aktualisiereBenutzerHotkey(mod.STANDARD_HOTKEYS, 'markCut', 'KeyD');
+  assert.equal(okShared.ok, true);
+  assert.equal(okShared.belegung.markCut, 'KeyD');
+
+  const konfliktGlobal = mod.aktualisiereBenutzerHotkey(mod.STANDARD_HOTKEYS, 'markCut', 'Space');
+  assert.equal(konfliktGlobal.ok, false);
+  assert.equal(konfliktGlobal.konfliktAktion, 'playPause');
+
+  // PrevPlay springt erst an Clip-Start, wenn weiter als 1 Frame im Clip
+  assert.deepEqual(mod.berechnePrevPlayOderClipStart(400, 2), { aktion: 'clipStart', zielMs: 0 });
+  assert.deepEqual(mod.berechnePrevPlayOderClipStart(0, 2), { aktion: 'prevPlay', zielIndex: 1 });
+  assert.deepEqual(mod.berechnePrevPlayOderClipStart(0, 0), { aktion: 'clipStart', zielMs: 0 });
+});
+
+test('Anmerkungs-Sichtbarkeit (#2) und Marker-/Play-Aggregation (#1)', async () => {
+  const mod = await ladeTsModul('src/services/annotationVisibility.ts');
+
+  // Rollen & Units (#2)
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('COACHES_ONLY', 'COACH', [], true), true);
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('COACHES_ONLY', 'PLAYER', ['OFFENSE'], true), false);
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('UNIT_OFFENSE', 'PLAYER', ['OFFENSE'], true), true);
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('UNIT_DEFENSE', 'PLAYER', ['OFFENSE'], true), false);
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('ALL_PLAYERS', 'PLAYER', [], true), true);
+  // Deaktiviertes Farb-Sharing: Spieler sehen alle Nicht-Coach-Anmerkungen
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('UNIT_DEFENSE', 'PLAYER', ['OFFENSE'], false), true);
+  assert.equal(mod.istAnmerkungFuerBenutzerSichtbar('COACHES_ONLY', 'PLAYER', ['OFFENSE'], false), false);
+
+  const elements = [
+    { id: '1', type: 'arrow', color: '#EF4444', strokeWidth: 0.0028, visibility: 'COACHES_ONLY', authorName: 'HC', start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
+    { id: '2', type: 'block_line', color: '#38BDF8', strokeWidth: 0.0028, visibility: 'UNIT_OFFENSE', authorName: 'OC', start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
+    { id: '3', type: 'dashed_line', color: '#22C55E', strokeWidth: 0.0028, visibility: 'UNIT_DEFENSE', authorName: 'DC', start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
+  ];
+  const fuerOffense = mod.filtereTelestrationElementeFuerBenutzer(elements, 'PLAYER', ['OFFENSE'], true);
+  assert.deepEqual(fuerOffense.map((e) => e.id), ['2']);
+
+  // Marker & Play-Zähler (#1)
+  const marker = mod.sammleFrameAnmerkungsMarker(
+    [
+      {
+        id: 't1',
+        reelId: 'r1',
+        playId: 'p1',
+        angleCode: 'SIDELINE',
+        frameIndex: 25,
+        elements: [elements[1]],
+        authorName: 'OC',
+        updatedAt: '2026-11-26T00:00:00Z',
+      },
+    ],
+    [
+      {
+        id: 'n1',
+        reelId: 'r1',
+        playId: 'p1',
+        angleCode: 'SIDELINE',
+        frameIndex: 50,
+        text: 'Achtung Blitz',
+        status: 'PUBLISHED',
+        cornerPosition: 'top-right',
+        visibility: 'UNIT_OFFENSE',
+        color: '#38BDF8',
+        authorUuid: 'u1',
+        authorName: 'HC',
+        createdAt: '2026-11-26T00:00:00Z',
+        updatedAt: '2026-11-26T00:00:00Z',
+      },
+    ],
+    'p1',
+    'SIDELINE'
+  );
+  assert.equal(marker.length, 2);
+  assert.deepEqual(marker[0].authors, ['OC']);
+  assert.equal(marker[0].hasDrawing, true);
+  assert.equal(marker[1].hasNote, true);
+
+  const zaehler = mod.sammlePlayAnmerkungsZaehler(
+    [{ id: 't1', reelId: 'r1', playId: 'p1', angleCode: 'SIDELINE', frameIndex: 25, elements: [elements[1]], updatedAt: '' }],
+    [{ id: 'n1', reelId: 'r1', playId: 'p1', angleCode: 'SIDELINE', frameIndex: 50, text: 'x', status: 'PUBLISHED', cornerPosition: 'top-right', authorUuid: 'u1', authorName: 'HC', createdAt: '', updatedAt: '' }]
+  );
+  assert.deepEqual(zaehler.p1, { drawingFrames: 1, noteCount: 1 });
+});
+
+test('ZIP-Archiv-Generator (#8) erzeugt valides PKZIP-Archiv ohne externe Abhängigkeiten', async () => {
+  const { erzeugeZipBytes } = await ladeTsModul('src/services/zipBuilder.ts');
+  const bytes = erzeugeZipBytes([
+    { name: 'metadata/reel.json', data: '{"ok":true}' },
+    { name: 'clips/play-001.mp4', data: new Uint8Array([0, 1, 2, 3, 4, 5]) },
+  ]);
+
+  // Lokaler Datei-Header PK\x03\x04 am Anfang
+  assert.equal(bytes[0], 0x50);
+  assert.equal(bytes[1], 0x4b);
+  assert.equal(bytes[2], 0x03);
+  assert.equal(bytes[3], 0x04);
+
+  const text = Buffer.from(bytes).toString('latin1');
+  assert.ok(text.includes('metadata/reel.json'));
+  assert.ok(text.includes('clips/play-001.mp4'));
+  assert.ok(text.includes('PK\x01\x02'));
+  assert.ok(text.includes('PK\x05\x06'));
+});
+
+test('handlePublicRequest (#8) unterstützt includeMetadata & vorwärtskompatibles publicCtx S3-Signing', async () => {
+  const serverMod = await import(path.join(ROOT_DIR, 'dist/server.js'));
+  const backend = serverMod.backendPlugin ?? serverMod.default;
+
+  const mockDb = {
+    async query(sql) {
+      if (sql.includes('FROM mod_video_share_links')) {
+        return {
+          rows: [
+            {
+              id: 'shl-1',
+              team_id: 'team-1',
+              access_id: 'acc-1',
+              reel_id: 'reel-1',
+              allowed_fields_json: null,
+              include_metadata: false,
+              expires_at: new Date(Date.now() + 86400_000).toISOString(),
+              revoked_at: null,
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM mod_video_team_reel_access')) {
+        return {
+          rows: [
+            {
+              reel_id: 'reel-1',
+              title: 'Game vs Berlin',
+              category: 'GAME',
+              event_date: '2026-11-14',
+              season: '2026',
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM mod_video_plays')) {
+        return {
+          rows: [
+            {
+              id: 'play-1',
+              play_number: 1,
+              sort_order: 1,
+              breakdown_json: JSON.stringify({ odk: 'O', down: 1, off_form: 'Trips' }),
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM mod_video_play_angles')) {
+        return {
+          rows: [
+            {
+              id: 'ang-1',
+              play_id: 'play-1',
+              angle_code: 'SIDELINE',
+              source_mode: 'CLIP_FILE',
+              s3_key: 'teams/team-1/plugins/video-analysis/clip1.mp4',
+              file_name: 'clip1.mp4',
+              file_size_bytes: 12345,
+              start_ms: 0,
+              end_ms: 10000,
+              offset_ms: null,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  // Ohne publicCtx -> kein Absturz, s3DownloadVerfuegbar = false, Metadaten ausgeblendet
+  const resOhneCtx = await backend.handlePublicRequest(
+    { method: 'GET', path: '/share/test-token', query: {}, body: undefined, headers: {} },
+    mockDb
+  );
+  assert.equal(resOhneCtx.status, 200);
+  assert.equal(resOhneCtx.body.includeMetadata, false);
+  assert.equal(resOhneCtx.body.s3DownloadVerfuegbar, false);
+  assert.deepEqual(resOhneCtx.body.plays[0].breakdown, {});
+
+  // Mit vorwärtskompatiblem publicCtx -> signierte Download-URL wird geliefert
+  const resMitCtx = await backend.handlePublicRequest(
+    { method: 'GET', path: '/share/test-token', query: {}, body: undefined, headers: {} },
+    mockDb,
+    {
+      async getSignedDownloadUrlForTeam({ objectPath }) {
+        return { url: `https://signed.example/${encodeURIComponent(objectPath)}` };
+      },
+    }
+  );
+  assert.equal(resMitCtx.status, 200);
+  assert.equal(resMitCtx.body.s3DownloadVerfuegbar, true);
+  assert.match(
+    resMitCtx.body.plays[0].sources.SIDELINE.streamUrl,
+    /^https:\/\/signed\.example\//
+  );
 });
 
 test('Release-Workflow installiert mit --legacy-peer-deps (verhindert E404 auf unveröffentlichtes @sidelineos/plugin-sdk)', async () => {

@@ -90,11 +90,50 @@ export const videoApi = {
   aktualisiereReel(
     teamId: string,
     reelId: string,
-    patch: { title?: string; category?: VideoKategorie; visibility?: SichtbarkeitsStufe }
-  ): Promise<{ ok: boolean }> {
+    patch: {
+      title?: string;
+      category?: VideoKategorie;
+      eventDate?: string;
+      season?: string;
+      visibility?: SichtbarkeitsStufe;
+    }
+  ): Promise<{ ok: boolean; updatedAt?: string }> {
     return pluginRequest(teamId, `/reels/${encodeURIComponent(reelId)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    });
+  },
+
+  fuegeAngleHinzu(
+    teamId: string,
+    reelId: string,
+    payload: {
+      angleCode: string;
+      mode: 'CLIPS' | 'FULL_TAPE';
+      assignments?: Array<{
+        playId?: string;
+        playNumber?: number;
+        createNewPlay?: boolean;
+        fileName: string;
+        s3Key: string;
+        startMs?: number;
+        endMs?: number;
+        offsetMs?: number | null;
+        fileSizeBytes?: number;
+      }>;
+      tape?: {
+        fileName: string;
+        s3Key: string;
+        startMs?: number;
+        endMs: number;
+        offsetMs?: number | null;
+        fileSizeBytes?: number;
+      };
+    }
+  ): Promise<{ ok: boolean; angleCode: string; assignedCount: number }> {
+    return pluginRequest(teamId, `/reels/${encodeURIComponent(reelId)}/angles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
@@ -136,6 +175,18 @@ export const videoApi = {
       playNumber?: number;
       breakdown?: PlayBreakdownDaten;
       angleOffsets?: Record<string, { startMs?: number; endMs?: number; offsetMs?: number | null }>;
+      upsertSources?: Record<
+        string,
+        {
+          fileName: string;
+          s3Key: string;
+          sourceMode: QuellenModus;
+          startMs: number;
+          endMs: number;
+          offsetMs?: number | null;
+          fileSizeBytes?: number;
+        }
+      >;
     }
   ): Promise<{ ok: boolean }> {
     return pluginRequest(teamId, `/plays/${encodeURIComponent(playId)}`, {
@@ -180,7 +231,7 @@ export const videoApi = {
   aktualisiereNotiz(
     teamId: string,
     noteId: string,
-    patch: Partial<Pick<CoachNotiz, 'text' | 'status' | 'cornerPosition'>>
+    patch: Partial<Pick<CoachNotiz, 'text' | 'status' | 'visibility' | 'color' | 'cornerPosition'>>
   ): Promise<{ ok: boolean }> {
     return pluginRequest(teamId, `/notes/${encodeURIComponent(noteId)}`, {
       method: 'PATCH',
@@ -200,7 +251,7 @@ export const videoApi = {
 
   speichereSchema(
     teamId: string,
-    schema: Pick<TeamTaggingSchema, 'fields' | 'dictionary'>
+    schema: Pick<TeamTaggingSchema, 'fields' | 'dictionary' | 'annotationSharing'>
   ): Promise<{ schema: TeamTaggingSchema }> {
     return pluginRequest(teamId, '/schema', {
       method: 'PUT',
@@ -260,7 +311,12 @@ export const videoApi = {
   erstelleShareLink(
     teamId: string,
     reelId: string,
-    payload: { label: string; allowedFields: string[]; expiresInDays: number }
+    payload: {
+      label: string;
+      allowedFields: string[];
+      includeMetadata?: boolean;
+      expiresInDays: number;
+    }
   ): Promise<{ link: PublicShareLinkInfo }> {
     return pluginRequest(teamId, `/reels/${encodeURIComponent(reelId)}/share-links`, {
       method: 'POST',

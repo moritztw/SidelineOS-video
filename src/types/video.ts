@@ -19,6 +19,9 @@ export type TelestrationWerkzeug =
   | 'select'
   | 'freehand'
   | 'arrow'
+  | 'line'
+  | 'block_line'
+  | 'dashed_line'
   | 'circle'
   | 'spotlight'
   | 'text';
@@ -32,6 +35,9 @@ export interface TelestrationBasis {
   id: string;
   color: string;
   strokeWidth: number;
+  visibility?: SichtbarkeitsStufe;
+  authorUuid?: string;
+  authorName?: string;
 }
 
 export interface TelestrationFreihand extends TelestrationBasis {
@@ -41,6 +47,12 @@ export interface TelestrationFreihand extends TelestrationBasis {
 
 export interface TelestrationPfeil extends TelestrationBasis {
   type: 'arrow';
+  start: Punkt2D;
+  end: Punkt2D;
+}
+
+export interface TelestrationLinie extends TelestrationBasis {
+  type: 'line' | 'block_line' | 'dashed_line';
   start: Punkt2D;
   end: Punkt2D;
 }
@@ -67,6 +79,7 @@ export interface TelestrationText extends TelestrationBasis {
 export type TelestrationElement =
   | TelestrationFreihand
   | TelestrationPfeil
+  | TelestrationLinie
   | TelestrationKreis
   | TelestrationSpotlight
   | TelestrationText;
@@ -78,6 +91,8 @@ export interface FrameTelestration {
   angleCode: WinkelCode;
   frameIndex: number;
   elements: TelestrationElement[];
+  authorUuid?: string;
+  authorName?: string;
   updatedAt: string;
 }
 
@@ -89,11 +104,18 @@ export interface CoachNotiz {
   frameIndex: number;
   text: string;
   status: NotizStatus;
+  visibility?: SichtbarkeitsStufe;
+  color?: string;
   cornerPosition: EckPosition;
   authorUuid: string;
   authorName: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AnmerkungsFreigabeKonfig {
+  enabled: boolean;
+  colorMap: Record<SichtbarkeitsStufe, string>;
 }
 
 export interface PlayBreakdownDaten {
@@ -176,8 +198,11 @@ export interface TeamTaggingSchema {
   teamId: string;
   fields: TaggingFeldKonfig[];
   dictionary: Record<string, string[]>;
+  annotationSharing?: AnmerkungsFreigabeKonfig;
   updatedAt: string;
 }
+
+export type HotkeyScope = 'GLOBAL' | 'FILM_ROOM' | 'FAST_CUT';
 
 export type HotkeyAktion =
   | 'playPause'
@@ -188,6 +213,8 @@ export type HotkeyAktion =
   | 'toggleFullscreen'
   | 'addNote'
   | 'toggleDraw'
+  | 'deleteAnnotation'
+  | 'toggleBreakdownOverlay'
   | 'markCut'
   | 'fastCutReverse'
   | 'fastCutPause'
@@ -241,6 +268,7 @@ export interface PublicShareLinkInfo {
   label: string;
   token?: string;
   allowedFields: string[];
+  includeMetadata?: boolean;
   expiresAt: string;
   revokedAt?: string | null;
   createdAt: string;
@@ -256,6 +284,8 @@ export interface PublicShareAnsichtDaten {
     angles: WinkelCode[];
   };
   allowedFields: string[];
+  includeMetadata?: boolean;
+  s3DownloadVerfuegbar?: boolean;
   plays: PlayEintrag[];
   expiresAt: string;
 }

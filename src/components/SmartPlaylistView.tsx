@@ -1,9 +1,15 @@
 import { useMemo, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
 import { createPluginTranslator } from '@sidelineos/plugin-sdk';
-import { ListFilter, Play, Plus, Save, Trash2 } from 'lucide-react';
+import { ListFilter, MessageSquare, Pencil, Play, Plus, Save, Trash2 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
 import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
+import {
+  bereinigeAnmerkungsKonfig,
+  filtereTelestrationElementeFuerBenutzer,
+  istAnmerkungFuerBenutzerSichtbar,
+  sammlePlayAnmerkungsZaehler,
+} from '../services/annotationVisibility';
 import { videoApi } from '../services/apiClient';
 import { filterePlaysNachRegeln } from '../services/smartPlaylistEngine';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
@@ -25,6 +31,8 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const {
     aktivesReel,
     aktivePlays,
+    telestrations,
+    notizen,
     teamSchema,
     playlists,
     setPlaylists,
@@ -33,6 +41,10 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
   const aktiveFelder = schema.fields.filter((f) => f.aktiv);
+  const sharingKonfig = useMemo(
+    () => bereinigeAnmerkungsKonfig(schema.annotationSharing),
+    [schema.annotationSharing]
+  );
 
   const [name, setName] = useState('');
   const [matchMode, setMatchMode] = useState<'ALL' | 'ANY'>('ALL');
@@ -44,6 +56,33 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     () => filterePlaysNachRegeln(aktivePlays, regeln, matchMode),
     [aktivePlays, regeln, matchMode]
   );
+
+  const anmerkungenProPlay = useMemo(() => {
+    const sichtbareTel = telestrations
+      .map((tel) => ({
+        ...tel,
+        elements: filtereTelestrationElementeFuerBenutzer(
+          tel.elements,
+          ctx.aktiveTeamAnsicht,
+          ctx.userUnits,
+          sharingKonfig.enabled
+        ),
+      }))
+      .filter((tel) => tel.elements.length > 0);
+    const sichtbareNotizen = notizen.filter(
+      (n) =>
+        (ctx.aktiveTeamAnsicht === 'COACH' ||
+          ctx.aktiveTeamAnsicht === 'TEAM_ADMIN' ||
+          n.status === 'PUBLISHED') &&
+        istAnmerkungFuerBenutzerSichtbar(
+          n.visibility,
+          ctx.aktiveTeamAnsicht,
+          ctx.userUnits,
+          sharingKonfig.enabled
+        )
+    );
+    return sammlePlayAnmerkungsZaehler(sichtbareTel, sichtbareNotizen);
+  }, [telestrations, notizen, ctx.aktiveTeamAnsicht, ctx.userUnits, sharingKonfig.enabled]);
 
   const handleRegelHinzufuegen = () => {
     setRegeln((alt) => [
@@ -270,6 +309,72 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           )}
         </div>
       </div>
+
+      {aktivesReel && trefferPlays.length > 0 && (
+        <div className="rounded-xl border border-sl-border bg-sl-surface p-4 space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <h2 className="font-semibold text-sl-heading">
+              Treffer-Vorschau ({trefferPlays.length} Spielzüge)
+            </h2>
+            <span className="text-sl-muted">
+              Mit Markierungs-Symbolen für annotierte Clips
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {trefferPlays.slice(0, 16).map((play) => {
+              const zaehler = anmerkungenProPlay[play.id];
+              const hatZeichnung = (zaehler?.drawingFrames ?? 0) > 0;
+              const hatNotiz = (zaehler?.noteCount ?? 0) > 0;
+              return (
+                <button
+                  key={play.id}
+                  type="button"
+                  onClick={() => handleImFilmRoomStarten([play.id])}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-left text-xs transition-colors hover:border-sl-accent"
+                >
+                  <div className="min-w-0">
+                    <div className="font-mono font-semibold text-sl-heading video-tabular">
+                      Play #{play.playNumber}
+                    </div>
+                    <div className="truncate text-[11px] text-sl-muted">
+                      {[
+                        play.breakdown.odk,
+                        play.breakdown.down ? `D${play.breakdown.down}` : null,
+                        play.breakdown.dist ? `&${play.breakdown.dist}` : null,
+                        play.breakdown.off_form,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || 'Ohne Tags'}
+                    </div>
+                  </div>
+                  {(hatZeichnung || hatNotiz) && (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-sl-accent video-tabular">
+                      {hatZeichnung && (
+                        <span
+                          className="inline-flex items-center gap-0.5"
+                          title={`${zaehler!.drawingFrames} Zeichnungs-Frame(s)`}
+                        >
+                          <Pencil className="h-3 w-3" aria-hidden="true" />
+                          {zaehler!.drawingFrames}
+                        </span>
+                      )}
+                      {hatNotiz && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-sl-primary"
+                          title={`${zaehler!.noteCount} Coach-Notiz(en)`}
+                        >
+                          <MessageSquare className="h-3 w-3" aria-hidden="true" />
+                          {zaehler!.noteCount}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

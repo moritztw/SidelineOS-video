@@ -201,6 +201,7 @@ declare module '@sidelineos/plugin-sdk' {
   export interface PluginLaufzeitKontext {
     team: TeamKontext;
     aktiveTeamAnsicht: TeamRolle;
+    userUnits?: SpielerUnit[];
     gewaehlteSaison: string;
     benutzer: BenutzerKonto;
     locale: string;
@@ -374,6 +375,15 @@ declare module '@sidelineos/plugin-sdk' {
     assetKeys: string[];
   }
 
+  export interface PluginPublicKontext {
+    createTeamS3ReadScope?: (teamId: string) => Pick<PluginS3Scope, 'prefix' | 'getSignedDownloadUrl'> | undefined;
+    getSignedDownloadUrlForTeam?: (params: {
+      teamId: string;
+      objectPath: string;
+      expiresInSeconds?: number;
+    }) => Promise<{ url: string; key: string; expiresIn: number }>;
+  }
+
   export interface PluginBackendKontext {
     readonly pluginId: PluginId;
     readonly manifest: PluginManifest;
@@ -385,6 +395,7 @@ declare module '@sidelineos/plugin-sdk' {
     readonly locale: string;
     readonly team: TeamKontext;
     readonly teamRolle: TeamRolle;
+    readonly userUnits?: SpielerUnit[];
     hasPermission(permission: PluginPermission): boolean;
   }
 
@@ -413,7 +424,8 @@ declare module '@sidelineos/plugin-sdk' {
         query: Record<string, unknown>;
         body: unknown;
       },
-      db: PluginDbScope
+      db: PluginDbScope,
+      publicCtx?: PluginPublicKontext
     ) => Promise<{ status: number; body: unknown }>;
     listExportableItems?: (
       ctx: PluginBackendKontext,

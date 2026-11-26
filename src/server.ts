@@ -3,11 +3,18 @@ import type {
   PluginBackendKontext,
   PluginDbScope,
   PluginExportScopeResult,
+  PluginS3Scope,
   PluginScopeItem,
   SidelineBackendPlugin,
 } from '@sidelineos/plugin-sdk';
 import sql001 from '../migrations/001_video_schema.sql';
+import sql002 from '../migrations/002_video_annotations_and_sharing.sql';
 import manifest from '../plugin.manifest.json';
+import {
+  bereinigeAnmerkungsKonfig,
+  filtereTelestrationElementeFuerBenutzer,
+  istAnmerkungFuerBenutzerSichtbar,
+} from './services/annotationVisibility';
 import { validiereSidelineBundle } from './services/bundleSchema';
 import { STANDARD_HOTKEYS, bereinigeHotkeyBelegung } from './services/frameAndHotkeys';
 import {
@@ -16,6 +23,7 @@ import {
   filtereBreakdownAufFelder,
 } from './services/taggingEngine';
 import type {
+  AnmerkungsFreigabeKonfig,
   BenutzerVideoPraeferenzen,
   CoachNotiz,
   PlayBreakdownDaten,
@@ -74,21 +82,28 @@ async function ladeTeamSchema(db: PluginDbScope, teamId: string): Promise<TeamTa
     active_fields_json: unknown;
     custom_fields_json: unknown;
     dictionary_json: unknown;
+    annotation_sharing_json: unknown;
     updated_at: string;
   }>(
-    `SELECT team_id, active_fields_json, custom_fields_json, dictionary_json, updated_at
+    `SELECT team_id, active_fields_json, custom_fields_json, dictionary_json, annotation_sharing_json, updated_at
      FROM mod_video_team_schemas WHERE team_id = $1 LIMIT 1`,
     [teamId]
   );
 
   const basis = erstelleStandardTeamSchema(teamId);
   if (res.rows.length === 0) {
-    return basis;
+    return {
+      ...basis,
+      annotationSharing: bereinigeAnmerkungsKonfig(null),
+    };
   }
   const row = res.rows[0];
   const savedFields = parseJson(row.active_fields_json, basis.fields);
   const customFields = parseJson<TeamTaggingSchema['fields']>(row.custom_fields_json, []);
   const dict = parseJson<Record<string, string[]>>(row.dictionary_json, basis.dictionary);
+  const annotationSharing = bereinigeAnmerkungsKonfig(
+    parseJson<Partial<AnmerkungsFreigabeKonfig> | null>(row.annotation_sharing_json, null)
+  );
 
   const mergedFields = Array.isArray(savedFields) && savedFields.length > 0 ? savedFields : basis.fields;
   const existingKeys = new Set(mergedFields.map((f) => f.key));
@@ -102,6 +117,7 @@ async function ladeTeamSchema(db: PluginDbScope, teamId: string): Promise<TeamTa
     teamId,
     fields: mergedFields,
     dictionary: dict,
+    annotationSharing,
     updatedAt: row.updated_at ?? basis.updatedAt,
   };
 }
@@ -111,7 +127,7 @@ async function ladePlaysFuerReel(
   reelId: string,
   teamId: string,
   allowedFields: string[] | null,
-  s3?: PluginBackendKontext['s3']
+  s3?: Pick<PluginS3Scope, 'prefix' | 'getSignedDownloadUrl'>
 ): Promise<PlayEintrag[]> {
   const playsRes = await db.query<{
     id: string;
@@ -206,6 +222,10 @@ export const backendPlugin: SidelineBackendPlugin = {
     {
       name: '001_video_schema.sql',
       sql: sql001,
+    },
+    {
+      name: '002_video_annotations_and_sharing.sql',
+      sql: sql002,
     },
   ],
 
@@ -333,27 +353,52 @@ export const backendPlugin: SidelineBackendPlugin = {
       }
 
       const customFelder = neueFelder.filter((f) => f.custom);
+      const aktuelleFreigabe = bereinigeAnmerkungsKonfig(aktuell.annotationSharing);
+      const neueFreigabe =
+        body.annotationSharing !== undefined
+          ? bereinigeAnmerkungsKonfig(body.annotationSharing)
+          : aktuelleFreigabe;
+
+      const freigabeGeaendert =
+        JSON.stringify(neueFreigabe) !== JSON.stringify(aktuelleFreigabe);
+      if (freigabeGeaendert && ctx.teamRolle !== 'TEAM_ADMIN') {
+        return {
+          status: 403,
+          body: { fehler: 'Nur der Team Admin darf die Farb-Freigaben für Anmerkungen ändern.' },
+        };
+      }
+
       const now = new Date().toISOString();
       await ctx.db.query(
         `INSERT INTO mod_video_team_schemas (
-           team_id, active_fields_json, custom_fields_json, dictionary_json, updated_at
-         ) VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5)
+           team_id, active_fields_json, custom_fields_json, dictionary_json, annotation_sharing_json, updated_at
+         ) VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6)
          ON CONFLICT (team_id) DO UPDATE SET
            active_fields_json = EXCLUDED.active_fields_json,
            custom_fields_json = EXCLUDED.custom_fields_json,
            dictionary_json = EXCLUDED.dictionary_json,
+           annotation_sharing_json = EXCLUDED.annotation_sharing_json,
            updated_at = EXCLUDED.updated_at`,
         [
           ctx.team.id,
           JSON.stringify(neueFelder),
           JSON.stringify(customFelder),
           JSON.stringify(neuesDict),
+          JSON.stringify(neueFreigabe),
           now,
         ]
       );
       return {
         status: 200,
-        body: { schema: { teamId: ctx.team.id, fields: neueFelder, dictionary: neuesDict, updatedAt: now } },
+        body: {
+          schema: {
+            teamId: ctx.team.id,
+            fields: neueFelder,
+            dictionary: neuesDict,
+            annotationSharing: neueFreigabe,
+            updatedAt: now,
+          },
+        },
       };
     }
 
@@ -703,7 +748,11 @@ export const backendPlugin: SidelineBackendPlugin = {
 
       if (method === 'GET') {
         const allowedFields = parseJson<string[] | null>(acc.allowed_fields_json, null);
-        const plays = await ladePlaysFuerReel(ctx.db, reelId, ctx.team.id, allowedFields, ctx.s3);
+        const [plays, teamSchema] = await Promise.all([
+          ladePlaysFuerReel(ctx.db, reelId, ctx.team.id, allowedFields, ctx.s3),
+          ladeTeamSchema(ctx.db, ctx.team.id),
+        ]);
+        const sharingEnabled = teamSchema.annotationSharing?.enabled !== false;
 
         const telRes = await ctx.db.query<{
           id: string;
@@ -711,9 +760,11 @@ export const backendPlugin: SidelineBackendPlugin = {
           angle_code: string;
           frame_index: number;
           elements_json: unknown;
+          created_by: string;
+          author_name: string;
           updated_at: string;
         }>(
-          `SELECT id, play_id, angle_code, frame_index, elements_json, updated_at
+          `SELECT id, play_id, angle_code, frame_index, elements_json, created_by, author_name, updated_at
            FROM mod_video_telestrations
            WHERE reel_id = $1 AND team_id = $2`,
           [reelId, ctx.team.id]
@@ -726,13 +777,15 @@ export const backendPlugin: SidelineBackendPlugin = {
           frame_index: number;
           text: string;
           status: CoachNotiz['status'];
+          visibility: SichtbarkeitsStufe;
+          color: string | null;
           corner_position: CoachNotiz['cornerPosition'];
           author_uuid: string;
           author_name: string;
           created_at: string;
           updated_at: string;
         }>(
-          `SELECT id, play_id, angle_code, frame_index, text, status, corner_position, author_uuid, author_name, created_at, updated_at
+          `SELECT id, play_id, angle_code, frame_index, text, status, visibility, color, corner_position, author_uuid, author_name, created_at, updated_at
            FROM mod_video_notes
            WHERE reel_id = $1 AND team_id = $2
            ORDER BY frame_index ASC, created_at ASC`,
@@ -740,7 +793,17 @@ export const backendPlugin: SidelineBackendPlugin = {
         );
 
         const notes: CoachNotiz[] = notesRes.rows
-          .filter((n) => istCoachOderAdmin || n.status === 'PUBLISHED')
+          .filter(
+            (n) =>
+              istCoachOderAdmin ||
+              (n.status === 'PUBLISHED' &&
+                istAnmerkungFuerBenutzerSichtbar(
+                  n.visibility,
+                  ctx.teamRolle,
+                  ctx.userUnits,
+                  sharingEnabled
+                ))
+          )
           .map((n) => ({
             id: n.id,
             reelId,
@@ -749,12 +812,37 @@ export const backendPlugin: SidelineBackendPlugin = {
             frameIndex: Number(n.frame_index),
             text: n.text,
             status: n.status,
+            visibility: n.visibility ?? 'ALL_PLAYERS',
+            color: n.color ?? undefined,
             cornerPosition: n.corner_position,
             authorUuid: n.author_uuid,
             authorName: n.author_name,
             createdAt: n.created_at,
             updatedAt: n.updated_at,
           }));
+
+        const telestrations = telRes.rows
+          .map((t) => {
+            const alleElemente = parseJson<TelestrationElement[]>(t.elements_json, []);
+            const sichtbareElemente = filtereTelestrationElementeFuerBenutzer(
+              alleElemente,
+              ctx.teamRolle,
+              ctx.userUnits,
+              sharingEnabled
+            );
+            return {
+              id: t.id,
+              reelId,
+              playId: t.play_id,
+              angleCode: t.angle_code,
+              frameIndex: Number(t.frame_index),
+              elements: sichtbareElemente,
+              authorUuid: t.created_by,
+              authorName: t.author_name || undefined,
+              updatedAt: t.updated_at,
+            };
+          })
+          .filter((t) => istCoachOderAdmin || t.elements.length > 0);
 
         const anglesSet = new Set<string>();
         plays.forEach((p) => Object.keys(p.sources).forEach((a) => anglesSet.add(a)));
@@ -781,15 +869,7 @@ export const backendPlugin: SidelineBackendPlugin = {
               updatedAt: acc.updated_at,
             } satisfies VideoReelEintrag,
             plays,
-            telestrations: telRes.rows.map((t) => ({
-              id: t.id,
-              reelId,
-              playId: t.play_id,
-              angleCode: t.angle_code,
-              frameIndex: Number(t.frame_index),
-              elements: parseJson<TelestrationElement[]>(t.elements_json, []),
-              updatedAt: t.updated_at,
-            })),
+            telestrations,
             notes,
           },
         };
@@ -802,19 +882,36 @@ export const backendPlugin: SidelineBackendPlugin = {
         const body = (req.body ?? {}) as {
           title?: string;
           category?: VideoKategorie;
+          eventDate?: string;
+          season?: string;
           visibility?: SichtbarkeitsStufe;
         };
+        const bereinigterTitel = body.title !== undefined ? body.title.trim() : null;
+        if (bereinigterTitel !== null && !bereinigterTitel) {
+          return { status: 400, body: { fehler: 'Titel des Video-Reels darf nicht leer sein.' } };
+        }
         const now = new Date().toISOString();
         await ctx.db.query(
           `UPDATE mod_video_team_reel_access
            SET title = COALESCE($1, title),
                category = COALESCE($2, category),
-               visibility = COALESCE($3, visibility),
-               updated_at = $4
-           WHERE id = $5 AND team_id = $6`,
-          [body.title ?? null, body.category ?? null, body.visibility ?? null, now, acc.id, ctx.team.id]
+               event_date = COALESCE($3, event_date),
+               season = COALESCE($4, season),
+               visibility = COALESCE($5, visibility),
+               updated_at = $6
+           WHERE id = $7 AND team_id = $8`,
+          [
+            bereinigterTitel,
+            body.category ?? null,
+            body.eventDate ?? null,
+            body.season ?? null,
+            body.visibility ?? null,
+            now,
+            acc.id,
+            ctx.team.id,
+          ]
         );
-        return { status: 200, body: { ok: true } };
+        return { status: 200, body: { ok: true, updatedAt: now } };
       }
 
       if (method === 'DELETE') {
@@ -852,6 +949,160 @@ export const backendPlugin: SidelineBackendPlugin = {
 
         return { status: 200, body: { ok: true, refCount: neuerRefCount } };
       }
+    }
+
+    // --- 5b. Nachträglichen Kamera-Angle hinzufügen (Einzelclips oder langes Tape, #7) ---
+    const anglesAddMatch = pfad.match(/^\/reels\/([^/]+)\/angles$/);
+    if (method === 'POST' && anglesAddMatch) {
+      if (!istCoachOderAdmin) {
+        return { status: 403, body: { fehler: 'Nur Coaches dürfen weitere Kamera-Winkel hinzufügen.' } };
+      }
+      const reelId = decodeURIComponent(anglesAddMatch[1]);
+      const accCheck = await ctx.db.query<{ id: string }>(
+        `SELECT id FROM mod_video_team_reel_access WHERE reel_id = $1 AND team_id = $2 LIMIT 1`,
+        [reelId, ctx.team.id]
+      );
+      if (accCheck.rows.length === 0) {
+        return { status: 404, body: { fehler: 'Video-Reel nicht gefunden.' } };
+      }
+
+      const body = (req.body ?? {}) as {
+        angleCode?: string;
+        mode?: 'CLIPS' | 'FULL_TAPE';
+        assignments?: Array<{
+          playId?: string;
+          playNumber?: number;
+          createNewPlay?: boolean;
+          fileName: string;
+          s3Key: string;
+          startMs?: number;
+          endMs?: number;
+          offsetMs?: number | null;
+          fileSizeBytes?: number;
+        }>;
+        tape?: {
+          fileName: string;
+          s3Key: string;
+          startMs?: number;
+          endMs: number;
+          offsetMs?: number | null;
+          fileSizeBytes?: number;
+        };
+      };
+
+      const angleCode = (body.angleCode ?? '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+      if (!angleCode) {
+        return { status: 400, body: { fehler: 'Gültiger Winkel-Code (z. B. ENDZONE) erforderlich.' } };
+      }
+      const now = new Date().toISOString();
+
+      const upsertPlayAngle = async (
+        playId: string,
+        src: {
+          sourceMode: QuellenModus;
+          s3Key: string;
+          fileName: string;
+          fileSizeBytes?: number;
+          startMs?: number;
+          endMs?: number;
+          offsetMs?: number | null;
+        }
+      ) => {
+        await ctx.db.query(
+          `DELETE FROM mod_video_play_angles WHERE play_id = $1 AND angle_code = $2`,
+          [playId, angleCode]
+        );
+        await ctx.db.query(
+          `INSERT INTO mod_video_play_angles (
+             id, play_id, reel_id, angle_code, source_mode, s3_key, file_name, file_size_bytes, start_ms, end_ms, offset_ms
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            `ang-${crypto.randomUUID()}`,
+            playId,
+            reelId,
+            angleCode,
+            src.sourceMode,
+            src.s3Key,
+            src.fileName,
+            Number(src.fileSizeBytes ?? 0),
+            Number(src.startMs ?? 0),
+            Number(src.endMs ?? 0),
+            src.offsetMs === undefined ? null : src.offsetMs,
+          ]
+        );
+      };
+
+      let zugeordnet = 0;
+
+      if (body.mode === 'FULL_TAPE') {
+        if (!body.tape?.s3Key || !body.tape?.fileName) {
+          return { status: 400, body: { fehler: 'Videodatei für das durchgehende Tape fehlt.' } };
+        }
+        const ersterPlayRes = await ctx.db.query<{ id: string }>(
+          `SELECT id FROM mod_video_plays WHERE reel_id = $1 AND team_id = $2 ORDER BY sort_order ASC, play_number ASC LIMIT 1`,
+          [reelId, ctx.team.id]
+        );
+        let targetPlayId = ersterPlayRes.rows[0]?.id;
+        if (!targetPlayId) {
+          targetPlayId = `play-${crypto.randomUUID()}`;
+          await ctx.db.query(
+            `INSERT INTO mod_video_plays (id, reel_id, team_id, play_number, sort_order, breakdown_json, created_at, updated_at)
+             VALUES ($1, $2, $3, 1, 1, $4::jsonb, $5, $5)`,
+            [targetPlayId, reelId, ctx.team.id, JSON.stringify({ odk: 'O', play_number: 1 }), now]
+          );
+        }
+        await upsertPlayAngle(targetPlayId, {
+          sourceMode: 'TIME_SLICE',
+          s3Key: body.tape.s3Key,
+          fileName: body.tape.fileName,
+          fileSizeBytes: body.tape.fileSizeBytes,
+          startMs: body.tape.startMs ?? 0,
+          endMs: body.tape.endMs,
+          offsetMs: body.tape.offsetMs ?? null,
+        });
+        zugeordnet = 1;
+      } else {
+        const assignments = Array.isArray(body.assignments) ? body.assignments : [];
+        if (assignments.length === 0) {
+          return { status: 400, body: { fehler: 'Mindestens ein Clip muss zugeordnet werden.' } };
+        }
+        const maxRes = await ctx.db.query<{ max_nr: number }>(
+          `SELECT COALESCE(MAX(play_number), 0)::int AS max_nr FROM mod_video_plays WHERE reel_id = $1 AND team_id = $2`,
+          [reelId, ctx.team.id]
+        );
+        let nextPlayNr = Number(maxRes.rows[0]?.max_nr ?? 0) + 1;
+
+        for (const item of assignments) {
+          let targetPlayId = item.playId;
+          if (!targetPlayId || item.createNewPlay) {
+            targetPlayId = `play-${crypto.randomUUID()}`;
+            const nr = item.playNumber ?? nextPlayNr;
+            nextPlayNr = Math.max(nextPlayNr, nr + 1);
+            await ctx.db.query(
+              `INSERT INTO mod_video_plays (id, reel_id, team_id, play_number, sort_order, breakdown_json, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $4, $5::jsonb, $6, $6)`,
+              [targetPlayId, reelId, ctx.team.id, nr, JSON.stringify({ odk: 'O', play_number: nr }), now]
+            );
+          }
+          await upsertPlayAngle(targetPlayId, {
+            sourceMode: 'CLIP_FILE',
+            s3Key: item.s3Key,
+            fileName: item.fileName,
+            fileSizeBytes: item.fileSizeBytes,
+            startMs: item.startMs ?? 0,
+            endMs: item.endMs ?? 12000,
+            offsetMs: item.offsetMs ?? null,
+          });
+          zugeordnet += 1;
+        }
+      }
+
+      await ctx.db.query(
+        `UPDATE mod_video_team_reel_access SET updated_at = $1 WHERE reel_id = $2 AND team_id = $3`,
+        [now, reelId, ctx.team.id]
+      );
+
+      return { status: 201, body: { ok: true, angleCode, assignedCount: zugeordnet } };
     }
 
     // --- 6. Plays anlegen / Breakdown & Sync aktualisieren ---
@@ -919,6 +1170,18 @@ export const backendPlugin: SidelineBackendPlugin = {
           playNumber?: number;
           breakdown?: PlayBreakdownDaten;
           angleOffsets?: Record<string, { startMs?: number; endMs?: number; offsetMs?: number | null }>;
+          upsertSources?: Record<
+            string,
+            {
+              fileName: string;
+              s3Key: string;
+              sourceMode: QuellenModus;
+              startMs: number;
+              endMs: number;
+              offsetMs?: number | null;
+              fileSizeBytes?: number;
+            }
+          >;
         };
         const now = new Date().toISOString();
         if (body.breakdown !== undefined || body.playNumber !== undefined) {
@@ -955,6 +1218,39 @@ export const backendPlugin: SidelineBackendPlugin = {
             );
           }
         }
+        if (body.upsertSources) {
+          const playRow = await ctx.db.query<{ reel_id: string }>(
+            `SELECT reel_id FROM mod_video_plays WHERE id = $1 AND team_id = $2 LIMIT 1`,
+            [playId, ctx.team.id]
+          );
+          const targetReelId = playRow.rows[0]?.reel_id;
+          if (targetReelId) {
+            for (const [angleCode, src] of Object.entries(body.upsertSources)) {
+              await ctx.db.query(
+                `DELETE FROM mod_video_play_angles WHERE play_id = $1 AND angle_code = $2`,
+                [playId, angleCode]
+              );
+              await ctx.db.query(
+                `INSERT INTO mod_video_play_angles (
+                   id, play_id, reel_id, angle_code, source_mode, s3_key, file_name, file_size_bytes, start_ms, end_ms, offset_ms
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [
+                  `ang-${crypto.randomUUID()}`,
+                  playId,
+                  targetReelId,
+                  angleCode,
+                  src.sourceMode ?? 'TIME_SLICE',
+                  src.s3Key,
+                  src.fileName,
+                  Number(src.fileSizeBytes ?? 0),
+                  Number(src.startMs ?? 0),
+                  Number(src.endMs ?? 0),
+                  src.offsetMs === undefined ? null : src.offsetMs,
+                ]
+              );
+            }
+          }
+        }
         return { status: 200, body: { ok: true } };
       }
       if (method === 'DELETE') {
@@ -984,12 +1280,19 @@ export const backendPlugin: SidelineBackendPlugin = {
       }
       const now = new Date().toISOString();
       const id = `tel-${crypto.randomUUID()}`;
+      const angereicherteElemente = (body.elements ?? []).map((el) => ({
+        ...el,
+        authorUuid: el.authorUuid ?? ctx.user.uuid,
+        authorName: el.authorName ?? ctx.user.vollerName,
+      }));
       await ctx.db.query(
         `INSERT INTO mod_video_telestrations (
-           id, team_id, reel_id, play_id, angle_code, frame_index, elements_json, created_by, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+           id, team_id, reel_id, play_id, angle_code, frame_index, elements_json, created_by, author_name, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
          ON CONFLICT (team_id, play_id, angle_code, frame_index) DO UPDATE SET
            elements_json = EXCLUDED.elements_json,
+           created_by = EXCLUDED.created_by,
+           author_name = EXCLUDED.author_name,
            updated_at = EXCLUDED.updated_at`,
         [
           id,
@@ -998,8 +1301,9 @@ export const backendPlugin: SidelineBackendPlugin = {
           playId,
           body.angleCode,
           Math.max(0, Math.round(body.frameIndex)),
-          JSON.stringify(body.elements ?? []),
+          JSON.stringify(angereicherteElemente),
           ctx.user.uuid,
+          ctx.user.vollerName,
           now,
         ]
       );
@@ -1020,8 +1324,8 @@ export const backendPlugin: SidelineBackendPlugin = {
       const now = new Date().toISOString();
       await ctx.db.query(
         `INSERT INTO mod_video_notes (
-           id, team_id, reel_id, play_id, angle_code, frame_index, text, status, corner_position, author_uuid, author_name, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,
+           id, team_id, reel_id, play_id, angle_code, frame_index, text, status, visibility, color, corner_position, author_uuid, author_name, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)`,
         [
           id,
           ctx.team.id,
@@ -1031,6 +1335,8 @@ export const backendPlugin: SidelineBackendPlugin = {
           Math.max(0, Math.round(body.frameIndex)),
           body.text.trim(),
           body.status ?? 'DRAFT',
+          body.visibility ?? 'ALL_PLAYERS',
+          body.color ?? null,
           body.cornerPosition ?? 'top-right',
           ctx.user.uuid,
           ctx.user.vollerName,
@@ -1053,10 +1359,21 @@ export const backendPlugin: SidelineBackendPlugin = {
           `UPDATE mod_video_notes
            SET text = COALESCE($1, text),
                status = COALESCE($2, status),
-               corner_position = COALESCE($3, corner_position),
-               updated_at = $4
-           WHERE id = $5 AND team_id = $6`,
-          [body.text ?? null, body.status ?? null, body.cornerPosition ?? null, now, noteId, ctx.team.id]
+               visibility = COALESCE($3, visibility),
+               color = COALESCE($4, color),
+               corner_position = COALESCE($5, corner_position),
+               updated_at = $6
+           WHERE id = $7 AND team_id = $8`,
+          [
+            body.text ?? null,
+            body.status ?? null,
+            body.visibility ?? null,
+            body.color ?? null,
+            body.cornerPosition ?? null,
+            now,
+            noteId,
+            ctx.team.id,
+          ]
         );
         return { status: 200, body: { ok: true } };
       }
@@ -1219,11 +1536,12 @@ export const backendPlugin: SidelineBackendPlugin = {
           reel_id: string;
           label: string;
           allowed_fields_json: unknown;
+          include_metadata: boolean;
           expires_at: string;
           revoked_at: string | null;
           created_at: string;
         }>(
-          `SELECT id, reel_id, label, allowed_fields_json, expires_at, revoked_at, created_at
+          `SELECT id, reel_id, label, allowed_fields_json, include_metadata, expires_at, revoked_at, created_at
            FROM mod_video_share_links
            WHERE team_id = $1 AND reel_id = $2
            ORDER BY created_at DESC`,
@@ -1237,6 +1555,7 @@ export const backendPlugin: SidelineBackendPlugin = {
               reelId: r.reel_id,
               label: r.label,
               allowedFields: parseJson<string[]>(r.allowed_fields_json, []),
+              includeMetadata: r.include_metadata !== false,
               expiresAt: r.expires_at,
               revokedAt: r.revoked_at,
               createdAt: r.created_at,
@@ -1255,8 +1574,11 @@ export const backendPlugin: SidelineBackendPlugin = {
         const body = (req.body ?? {}) as {
           label?: string;
           allowedFields?: string[];
+          includeMetadata?: boolean;
           expiresInDays?: number;
         };
+        const includeMetadata = body.includeMetadata !== false;
+        const allowedFields = includeMetadata ? (body.allowedFields ?? []) : [];
         const tage = Math.max(1, Math.min(90, Math.round(Number(body.expiresInDays ?? 7))));
         const token = crypto.randomBytes(24).toString('base64url');
         const tokenHash = hashToken(token);
@@ -1266,8 +1588,8 @@ export const backendPlugin: SidelineBackendPlugin = {
 
         await ctx.db.query(
           `INSERT INTO mod_video_share_links (
-             id, team_id, access_id, reel_id, token_hash, label, allowed_fields_json, expires_at, created_by, created_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+             id, team_id, access_id, reel_id, token_hash, label, allowed_fields_json, include_metadata, expires_at, created_by, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)`,
           [
             id,
             ctx.team.id,
@@ -1275,7 +1597,8 @@ export const backendPlugin: SidelineBackendPlugin = {
             reelId,
             tokenHash,
             (body.label ?? 'Öffentlicher Scouting-Link').trim(),
-            JSON.stringify(body.allowedFields ?? []),
+            JSON.stringify(allowedFields),
+            includeMetadata,
             expiresAt,
             ctx.user.uuid,
             now,
@@ -1289,7 +1612,8 @@ export const backendPlugin: SidelineBackendPlugin = {
               reelId,
               label: (body.label ?? 'Öffentlicher Scouting-Link').trim(),
               token,
-              allowedFields: body.allowedFields ?? [],
+              allowedFields,
+              includeMetadata,
               expiresAt,
               createdAt: now,
             },
@@ -1314,7 +1638,7 @@ export const backendPlugin: SidelineBackendPlugin = {
     return { status: 404, body: { fehler: `Unbekannte Video-Route: ${method} ${pfad}` } };
   },
 
-  async handlePublicRequest(req, db): Promise<RouteAntwort> {
+  async handlePublicRequest(req, db, publicCtx): Promise<RouteAntwort> {
     const pfad = normalisierePfad(req.path);
     const match = pfad.match(/^\/share\/([^/]+)$/);
     if (req.method.toUpperCase() !== 'GET' || !match) {
@@ -1329,10 +1653,11 @@ export const backendPlugin: SidelineBackendPlugin = {
       access_id: string;
       reel_id: string;
       allowed_fields_json: unknown;
+      include_metadata: boolean;
       expires_at: string;
       revoked_at: string | null;
     }>(
-      `SELECT id, team_id, access_id, reel_id, allowed_fields_json, expires_at, revoked_at
+      `SELECT id, team_id, access_id, reel_id, allowed_fields_json, include_metadata, expires_at, revoked_at
        FROM mod_video_share_links
        WHERE token_hash = $1 LIMIT 1`,
       [tokenHash]
@@ -1362,9 +1687,25 @@ export const backendPlugin: SidelineBackendPlugin = {
       return { status: 404, body: { fehler: 'Zugehöriges Reel existiert nicht mehr.' } };
     }
     const acc = accRes.rows[0];
-    const allowedFields = parseJson<string[]>(link.allowed_fields_json, []);
+    const includeMetadata = link.include_metadata !== false;
+    const allowedFields = includeMetadata ? parseJson<string[]>(link.allowed_fields_json, []) : [];
+
+    // Vorwärtskompatible Read-Only S3-Signierung (greift automatisch sobald Core publicCtx liefert)
+    let publicS3: Pick<PluginS3Scope, 'prefix' | 'getSignedDownloadUrl'> | undefined;
+    if (publicCtx?.createTeamS3ReadScope) {
+      publicS3 = publicCtx.createTeamS3ReadScope(link.team_id);
+    } else if (publicCtx?.getSignedDownloadUrlForTeam) {
+      const signer = publicCtx.getSignedDownloadUrlForTeam;
+      publicS3 = {
+        prefix: `teams/${link.team_id}/plugins/video-analysis/`,
+        getSignedDownloadUrl: ({ objectPath, expiresInSeconds }) =>
+          signer({ teamId: link.team_id, objectPath, expiresInSeconds }),
+      };
+    }
+
     // Strikt ohne Coach-Notizen oder Telestrationen ausliefern
-    const plays = await ladePlaysFuerReel(db, link.reel_id, link.team_id, allowedFields);
+    const plays = await ladePlaysFuerReel(db, link.reel_id, link.team_id, allowedFields, publicS3);
+    const hatStreamUrls = plays.some((p) => Object.values(p.sources).some((s) => Boolean(s.streamUrl)));
 
     const anglesSet = new Set<string>();
     plays.forEach((p) => Object.keys(p.sources).forEach((a) => anglesSet.add(a)));
@@ -1381,6 +1722,8 @@ export const backendPlugin: SidelineBackendPlugin = {
           angles: anglesSet.size > 0 ? Array.from(anglesSet) : ['SIDELINE'],
         },
         allowedFields,
+        includeMetadata,
+        s3DownloadVerfuegbar: hatStreamUrls,
         plays,
         expiresAt: link.expires_at,
       } satisfies PublicShareAnsichtDaten,

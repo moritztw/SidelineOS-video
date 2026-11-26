@@ -11,6 +11,8 @@ import {
   Pause,
   Play,
   Scissors,
+  SkipBack,
+  SkipForward,
   SlidersHorizontal,
   Undo2,
 } from 'lucide-react';
@@ -19,11 +21,12 @@ import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
 import { videoApi } from '../services/apiClient';
 import {
   FRAME_MS,
+  berechnePrevPlayOderClipStart,
   berechneRestclipZeit,
   bereinigeHotkeyBelegung,
   formatiereFrameTimecode,
   formatiereHotkeyAnzeige,
-  normalisiereTaste,
+  matchesHotkeyEvent,
 } from '../services/frameAndHotkeys';
 import { analysierePlaySyncStatus } from '../services/smartPlaylistEngine';
 
@@ -34,6 +37,7 @@ interface SessionSchnittEintrag {
   startMs: number;
   endMs: number;
   warInitialPlatzhalter?: boolean;
+  warZugeordnetAnExistierendenPlay?: boolean;
   vorherEndMs?: number;
 }
 
@@ -78,6 +82,11 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     [aktivePlays, aktivesPlayId]
   );
 
+  const aktivesPlayIndex = useMemo(
+    () => (aktivesPlay ? aktivePlays.findIndex((p) => p.id === aktivesPlay.id) : -1),
+    [aktivePlays, aktivesPlay]
+  );
+
   const syncAnalyse = useMemo(() => {
     if (!aktivesReel) return [];
     return analysierePlaySyncStatus(aktivePlays, aktivesReel.angles);
@@ -88,6 +97,19 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     (aktivesPlay ? Object.values(aktivesPlay.sources)[0] : undefined);
   const slaveQuelle = aktivesPlay?.sources[sekundaerWinkel];
   const aktuellerOffset = slaveQuelle?.offsetMs ?? 0;
+
+  // Winkel-Auswahl synchron halten, wenn neue Angles hinzugefügt werden (#7)
+  useEffect(() => {
+    if (!aktivesReel) return;
+    if (!aktivesReel.angles.includes(fastCutWinkel) && aktivesReel.angles.length > 0) {
+      setFastCutWinkel(aktivesReel.angles[0]);
+    }
+    const masterCode = masterQuelle?.angleCode ?? 'SIDELINE';
+    const alternative = aktivesReel.angles.find((a) => a !== masterCode);
+    if (alternative && !aktivesReel.angles.includes(sekundaerWinkel)) {
+      setSekundaerWinkel(alternative);
+    }
+  }, [aktivesReel?.id, aktivesReel?.angles.join(','), masterQuelle?.angleCode]);
 
   // Quelle für Fast-Cut (bevorzugt ersten Play mit gewähltem Winkel)
   const fastCutQuelle = useMemo(() => {
@@ -117,7 +139,6 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   useEffect(() => {
     setSessionCuts([]);
     setTapeSpeed(0);
-    // Wenn bereits mehrere Time-Slices für diesen Winkel existieren, beim letzten Schnitt fortsetzen
     const vorhandeneSlices = aktivePlays
       .map((p) => p.sources[fastCutWinkel])
       .filter((s) => s && s.sourceMode === 'TIME_SLICE');
@@ -214,6 +235,24 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     }
   };
 
+  const handleSyncPrevPlayOderStart = () => {
+    const aktion = berechnePrevPlayOderClipStart(syncPosMs, aktivesPlayIndex);
+    if (aktion.aktion === 'clipStart') {
+      setSyncLaeuft(false);
+      springeSyncMs(0);
+    } else if (aktivePlays[aktion.zielIndex]) {
+      setSyncLaeuft(false);
+      setAktivesPlayId(aktivePlays[aktion.zielIndex].id);
+    }
+  };
+
+  const handleSyncNextPlay = () => {
+    if (aktivesPlayIndex >= 0 && aktivesPlayIndex < aktivePlays.length - 1) {
+      setSyncLaeuft(false);
+      setAktivesPlayId(aktivePlays[aktivesPlayIndex + 1].id);
+    }
+  };
+
   // Echte Fast-Cut-Videosteuerung (J / K / L) begrenzt auf Restclip ab cutStartMs
   useEffect(() => {
     if (modus !== 'FAST_CUT') return;
@@ -280,11 +319,12 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     const basisSrc = fastCutQuelle ?? masterQuelle;
     const zielWinkel = basisSrc?.angleCode ?? fastCutWinkel;
 
-    // Prüfen, ob Play #1 noch der ungeschnittene Upload-Platzhalter [0 .. volle Länge] ist
+    // 1) Prüfen, ob Play #1 noch der ungeschnittene Voll-Tape-Platzhalter für diesen Winkel ist
+    const playsMitWinkel = aktivePlays.filter((p) => Boolean(p.sources[zielWinkel]));
     const ersterPlay = aktivePlays[0];
     const ersterSrc = ersterPlay?.sources[zielWinkel];
     const istInitialPlatzhalter =
-      aktivePlays.length === 1 &&
+      playsMitWinkel.length === 1 &&
       sessionCuts.length === 0 &&
       cutStartMs === 0 &&
       ersterSrc?.sourceMode === 'TIME_SLICE' &&
@@ -329,11 +369,68 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       setCutStartMs(zielEndMs);
       setTapePosMs(zielEndMs);
       setStatusHinweis(
-        `Spielzug #${ersterPlay.playNumber} (${formatiereFrameTimecode(0)} – ${formatiereFrameTimecode(zielEndMs)}) geschnitten.`
+        `Spielzug #${ersterPlay.playNumber} (${zielWinkel}: ${formatiereFrameTimecode(0)} – ${formatiereFrameTimecode(zielEndMs)}) geschnitten.`
       );
       return;
     }
 
+    // 2) Nachträglich hinzugefügter 2. Angle (#7): Existierenden Play ohne diesen Winkel befüllen statt Duplikate anzulegen
+    const naechsterOhneWinkel = aktivePlays.find((p) => !p.sources[zielWinkel]);
+    if (naechsterOhneWinkel && basisSrc) {
+      await videoApi.aktualisierePlay(ctx.team.id, naechsterOhneWinkel.id, {
+        upsertSources: {
+          [zielWinkel]: {
+            fileName: basisSrc.fileName,
+            s3Key: basisSrc.s3Key,
+            sourceMode: 'TIME_SLICE',
+            startMs: cutStartMs,
+            endMs: zielEndMs,
+            offsetMs: null,
+            fileSizeBytes: basisSrc.fileSizeBytes,
+          },
+        },
+      });
+      aktualisierePlaysLokal((alt) =>
+        alt.map((p) =>
+          p.id === naechsterOhneWinkel.id
+            ? {
+                ...p,
+                sources: {
+                  ...p.sources,
+                  [zielWinkel]: {
+                    ...basisSrc,
+                    id: `ang-${Date.now()}`,
+                    angleCode: zielWinkel,
+                    sourceMode: 'TIME_SLICE',
+                    startMs: cutStartMs,
+                    endMs: zielEndMs,
+                    offsetMs: null,
+                  },
+                },
+              }
+            : p
+        )
+      );
+      setSessionCuts((alt) => [
+        ...alt,
+        {
+          playId: naechsterOhneWinkel.id,
+          playNumber: naechsterOhneWinkel.playNumber,
+          winkel: zielWinkel,
+          startMs: cutStartMs,
+          endMs: zielEndMs,
+          warZugeordnetAnExistierendenPlay: true,
+        },
+      ]);
+      setCutStartMs(zielEndMs);
+      setTapePosMs(zielEndMs);
+      setStatusHinweis(
+        `Winkel ${zielWinkel} an bestehenden Spielzug #${naechsterOhneWinkel.playNumber} (${formatiereFrameTimecode(cutStartMs)} – ${formatiereFrameTimecode(zielEndMs)}) angehängt.`
+      );
+      return;
+    }
+
+    // 3) Standard: Neuen Spielzug erzeugen
     const nextNr = aktivePlays.reduce((m, p) => Math.max(m, p.playNumber), 0) + 1;
     const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
       playNumber: nextNr,
@@ -415,6 +512,16 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           };
         })
       );
+    } else if (letzter.warZugeordnetAnExistierendenPlay) {
+      // Nur lokal zurücksetzen und Offset/Bereich auf 0 setzen (Play selbst bleibt erhalten)
+      aktualisierePlaysLokal((alt) =>
+        alt.map((p) => {
+          if (p.id !== letzter.playId) return p;
+          const nextSources = { ...p.sources };
+          delete nextSources[letzter.winkel];
+          return { ...p, sources: nextSources };
+        })
+      );
     } else {
       await videoApi.loeschePlay(ctx.team.id, letzter.playId);
       aktualisierePlaysLokal((alt) => alt.filter((p) => p.id !== letzter.playId));
@@ -429,53 +536,65 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setStatusHinweis(`Schnitt #${letzter.playNumber} rückgängig gemacht.`);
   };
 
-  // Tastenkürzel für SYNC und FAST_CUT inkl. Vollbild-Hotkey
+  // Einheitliche Tastenkürzel inkl. Modifier-Support für SYNC und FAST_CUT (#3)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      const taste = normalisiereTaste(e.code || e.key);
 
-      if (taste === hotkeys.toggleFullscreen) {
+      if (matchesHotkeyEvent(e, hotkeys.toggleFullscreen)) {
         e.preventDefault();
         toggleVollbild();
         return;
       }
 
       if (modus === 'SYNC') {
-        if (taste === hotkeys.playPause) {
+        if (matchesHotkeyEvent(e, hotkeys.playPause)) {
           e.preventDefault();
           setSyncLaeuft((v) => !v);
-        } else if (taste === hotkeys.stepBack) {
+        } else if (matchesHotkeyEvent(e, hotkeys.stepBack)) {
           e.preventDefault();
           setSyncLaeuft(false);
           springeSyncMs(syncPosMs - FRAME_MS);
-        } else if (taste === hotkeys.stepForward) {
+        } else if (matchesHotkeyEvent(e, hotkeys.stepForward)) {
           e.preventDefault();
           setSyncLaeuft(false);
           springeSyncMs(syncPosMs + FRAME_MS);
+        } else if (matchesHotkeyEvent(e, hotkeys.prevPlay)) {
+          e.preventDefault();
+          handleSyncPrevPlayOderStart();
+        } else if (matchesHotkeyEvent(e, hotkeys.nextPlay)) {
+          e.preventDefault();
+          handleSyncNextPlay();
         }
         return;
       }
 
-      if (taste === hotkeys.fastCutReverse) {
+      if (matchesHotkeyEvent(e, hotkeys.fastCutReverse)) {
         e.preventDefault();
         setTapeSpeed((s) => (s <= -2 ? -4 : -2));
-      } else if (taste === hotkeys.fastCutPause || taste === hotkeys.playPause) {
+      } else if (matchesHotkeyEvent(e, hotkeys.playPause)) {
         e.preventDefault();
-        setTapeSpeed((s) => (taste === hotkeys.playPause && s === 0 ? 1 : 0));
-      } else if (taste === hotkeys.fastCutForward) {
+        setTapeSpeed((s) => (s === 0 ? 1 : 0));
+      } else if (matchesHotkeyEvent(e, hotkeys.fastCutPause)) {
+        e.preventDefault();
+        setTapeSpeed(0);
+      } else if (matchesHotkeyEvent(e, hotkeys.fastCutForward)) {
         e.preventDefault();
         setTapeSpeed((s) => (s >= 2 ? 4 : s >= 1 ? 2 : 1));
-      } else if (taste === hotkeys.stepBack) {
+      } else if (matchesHotkeyEvent(e, hotkeys.stepBack)) {
         e.preventDefault();
         setTapeSpeed(0);
         springeFastCutMs(tapePosMs - FRAME_MS);
-      } else if (taste === hotkeys.stepForward) {
+      } else if (matchesHotkeyEvent(e, hotkeys.stepForward)) {
         e.preventDefault();
         setTapeSpeed(0);
         springeFastCutMs(tapePosMs + FRAME_MS);
-      } else if (taste === hotkeys.markCut) {
+      } else if (matchesHotkeyEvent(e, hotkeys.prevPlay)) {
+        e.preventDefault();
+        setTapeSpeed(0);
+        springeFastCutMs(cutStartMs);
+      } else if (matchesHotkeyEvent(e, hotkeys.markCut)) {
         e.preventDefault();
         setzeEinPunktSchnitt();
       }
@@ -520,6 +639,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   };
 
   const restClip = berechneRestclipZeit(tapePosMs, cutStartMs, tapeDauerMs);
+  const naechsterOffenerPlay = aktivePlays.find((p) => !p.sources[fastCutWinkel]);
 
   return (
     <section className="space-y-6">
@@ -538,7 +658,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               setTapeSpeed(0);
               setModus('SYNC');
             }}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap ${
               modus === 'SYNC'
                 ? 'bg-sl-accent text-sl-accent-contrast'
                 : 'text-sl-muted hover:text-sl-heading'
@@ -553,21 +673,21 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               setSyncLaeuft(false);
               setModus('FAST_CUT');
             }}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap ${
               modus === 'FAST_CUT'
                 ? 'bg-sl-accent text-sl-accent-contrast'
                 : 'text-sl-muted hover:text-sl-heading'
             }`}
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
-            Fast-Cut ({formatiereHotkeyAnzeige(hotkeys.markCut)} / J-K-L)
+            Fast-Cut ({formatiereHotkeyAnzeige(hotkeys.markCut)})
           </button>
         </div>
       </header>
 
       {statusHinweis && (
         <div className="flex items-center gap-2 rounded-lg border border-sl-border bg-sl-surface px-4 py-2.5 text-xs text-sl-accent">
-          <Check className="h-4 w-4" aria-hidden="true" />
+          <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
           {statusHinweis}
         </div>
       )}
@@ -721,6 +841,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    title={`Clip-Beginn / Vorheriger Play (${formatiereHotkeyAnzeige(hotkeys.prevPlay)})`}
+                    onClick={handleSyncPrevPlayOderStart}
+                    className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
+                  >
+                    <SkipBack className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
                     title={`-1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepBack)})`}
                     onClick={() => {
                       setSyncLaeuft(false);
@@ -752,6 +880,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
                   >
                     <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    title={`Nächster Play (${formatiereHotkeyAnzeige(hotkeys.nextPlay)})`}
+                    onClick={handleSyncNextPlay}
+                    className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
+                  >
+                    <SkipForward className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
                 <input
@@ -815,6 +951,8 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   { key: hotkeys.playPause, label: 'Play/Pause' },
                   { key: hotkeys.stepBack, label: '-1 Frame' },
                   { key: hotkeys.stepForward, label: '+1 Frame' },
+                  { key: hotkeys.prevPlay, label: 'Clip-Start / Vorheriger' },
+                  { key: hotkeys.nextPlay, label: 'Nächster Play' },
                   { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
                 ].map((item) => (
                   <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -876,6 +1014,11 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 {cutStartMs > 0 && (
                   <span className="rounded border border-sl-accent/40 bg-sl-accent/10 px-2 py-0.5 font-mono text-[11px] text-sl-accent video-tabular">
                     Restclip ab {formatiereFrameTimecode(cutStartMs)}
+                  </span>
+                )}
+                {naechsterOffenerPlay && (
+                  <span className="rounded border border-sl-border bg-sl-canvas px-2 py-0.5 font-mono text-[11px] text-sl-muted video-tabular">
+                    Nächster Schnitt → Play #{naechsterOffenerPlay.playNumber}
                   </span>
                 )}
               </div>
@@ -1056,7 +1199,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <span className="text-sl-muted">Geschnitten:</span>
                 {sessionCuts.map((c) => (
                   <span
-                    key={c.playId}
+                    key={`${c.playId}-${c.winkel}-${c.startMs}`}
                     className="rounded border border-sl-border bg-sl-canvas px-2 py-0.5 font-mono text-sl-primary video-tabular"
                   >
                     #{c.playNumber} ({formatiereFrameTimecode(c.startMs)}–{formatiereFrameTimecode(c.endMs)})
@@ -1067,16 +1210,18 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sl-border/70 pt-2 text-[11px] text-sl-muted">
               {[
+                { key: hotkeys.playPause, label: 'Play/Pause' },
                 { key: hotkeys.fastCutReverse, label: 'Rückwärts' },
                 { key: hotkeys.fastCutPause, label: 'Pause' },
                 { key: hotkeys.fastCutForward, label: 'Vorwärts (1x/2x/4x)' },
                 { key: hotkeys.stepBack, label: '-1 Frame' },
                 { key: hotkeys.stepForward, label: '+1 Frame' },
+                { key: hotkeys.prevPlay, label: 'An Clip-Start' },
                 { key: hotkeys.markCut, label: 'Schnitt setzen' },
                 { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
               ].map((item) => (
                 <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
-                  <kbd className="rounded border border-sl-border bg-sl-canvas px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
+                  <kbd className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
                     {formatiereHotkeyAnzeige(item.key)}
                   </kbd>
                   <span>{item.label}</span>
