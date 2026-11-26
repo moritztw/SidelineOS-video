@@ -3,8 +3,8 @@ import {
   useCallback,
   useContext,
   useState,
-  type ReactNode,
 } from 'react';
+import type { PluginProviderProps } from '@sidelineos/plugin-sdk';
 import { videoApi } from '../services/apiClient';
 import { STANDARD_HOTKEYS } from '../services/frameAndHotkeys';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
@@ -49,7 +49,7 @@ interface VideoAnalysisContextWert {
 
 const VideoAnalysisContext = createContext<VideoAnalysisContextWert | null>(null);
 
-export function VideoAnalysisProvider({ children }: { children: ReactNode }) {
+export function VideoAnalysisProvider({ children }: PluginProviderProps) {
   const [reels, setReels] = useState<VideoReelEintrag[]>([]);
   const [laedtReels, setLaedtReels] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);

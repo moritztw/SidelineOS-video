@@ -115,17 +115,17 @@ export function BreakdownGrid({
   };
 
   return (
-    <div className="rounded-xl border border-[#232933] bg-[#13171D]">
-      <div className="flex items-center justify-between border-b border-[#232933] px-4 py-3">
+    <div className="rounded-xl border border-sl-border bg-sl-surface">
+      <div className="flex items-center justify-between border-b border-sl-border px-4 py-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-white">Hudl-Breakdown</h3>
-          <span className="text-xs text-[#8B949E] video-tabular">{plays.length} Spielzüge</span>
+          <h3 className="text-sm font-semibold text-sl-heading">Hudl-Breakdown</h3>
+          <span className="text-xs text-sl-muted video-tabular">{plays.length} Spielzüge</span>
         </div>
         {istCoachOderAdmin && onAddPlay && (
           <button
             type="button"
             onClick={onAddPlay}
-            className="inline-flex items-center gap-1.5 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs font-medium text-[#E6EDF3] hover:border-[#F59E0B] hover:text-white whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs font-medium text-sl-primary hover:border-sl-accent hover:text-sl-heading whitespace-nowrap shrink-0"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Spielzug
@@ -136,7 +136,7 @@ export function BreakdownGrid({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left text-xs">
           <thead>
-            <tr className="border-b border-[#232933] bg-[#0B0E11] text-[11px] font-semibold text-[#8B949E]">
+            <tr className="border-b border-sl-border bg-sl-canvas text-[11px] font-semibold text-sl-muted">
               {spalten.map((spalte) => (
                 <th
                   key={spalte.key}
@@ -157,10 +157,10 @@ export function BreakdownGrid({
                 <tr
                   key={play.id}
                   onClick={() => onSelectPlay(play.id)}
-                  className={`h-9 cursor-pointer border-b border-[#232933]/60 transition-colors ${
+                  className={`h-9 cursor-pointer border-b border-sl-border/60 transition-colors ${
                     aktiv
-                      ? 'bg-[#F59E0B]/10 text-white'
-                      : 'text-[#E6EDF3] hover:bg-[#1A2029]'
+                      ? 'bg-sl-accent/10 text-sl-heading'
+                      : 'text-sl-primary hover:bg-sl-elevated/60'
                   }`}
                 >
                   {spalten.map((spalte) => {
@@ -194,13 +194,13 @@ export function BreakdownGrid({
                             onChange={(e) =>
                               handleFeldAenderung(play, idx, spalte.key, e.target.value)
                             }
-                            className="h-7 min-w-[68px] rounded border border-transparent bg-transparent px-1.5 text-xs text-inherit hover:border-[#232933] focus:border-[#F59E0B] focus:bg-[#0B0E11] focus:outline-none"
+                            className="h-7 min-w-[68px] rounded border border-transparent bg-transparent px-1.5 text-xs text-inherit hover:border-sl-border focus:border-sl-accent focus:bg-sl-canvas focus:outline-none"
                           >
-                            <option value="" className="bg-[#0B0E11]">
+                            <option value="" className="bg-sl-canvas">
                               —
                             </option>
                             {(spalte.optionen ?? []).map((opt) => (
-                              <option key={opt} value={opt} className="bg-[#0B0E11]">
+                              <option key={opt} value={opt} className="bg-sl-canvas">
                                 {opt}
                               </option>
                             ))}
@@ -216,7 +216,7 @@ export function BreakdownGrid({
                               onChange={(e) =>
                                 handleFeldAenderung(play, idx, spalte.key, e.target.value)
                               }
-                              className={`h-7 rounded border border-transparent bg-transparent px-1.5 text-xs text-inherit hover:border-[#232933] focus:border-[#F59E0B] focus:bg-[#0B0E11] focus:outline-none ${
+                              className={`h-7 rounded border border-transparent bg-transparent px-1.5 text-xs text-inherit hover:border-sl-border focus:border-sl-accent focus:bg-sl-canvas focus:outline-none ${
                                 spalte.typ === 'number'
                                   ? 'w-16 font-mono video-tabular'
                                   : 'w-28'
@@ -244,7 +244,7 @@ export function BreakdownGrid({
                           onDeletePlay(play.id);
                         }}
                         title="Spielzug löschen"
-                        className="rounded p-1 text-[#6E7681] hover:bg-red-950/50 hover:text-red-300"
+                        className="rounded p-1 text-sl-subtle hover:bg-sl-danger/15 hover:text-sl-danger-text"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>

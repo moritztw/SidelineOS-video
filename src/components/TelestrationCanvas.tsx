@@ -506,7 +506,7 @@ export function TelestrationCanvas({
       {textEingabe && !readOnly && (
         <div
           data-telestration-input="true"
-          className="pointer-events-auto absolute z-30 flex items-center gap-1.5 rounded-lg border border-[#F59E0B] bg-[#0B0E11]/95 p-1.5 shadow-lg"
+          className="pointer-events-auto absolute z-30 flex items-center gap-1.5 rounded-lg border border-sl-accent bg-sl-canvas/95 p-1.5 shadow-lg"
           style={{
             left: `${Math.min(68, textEingabe.pos.x * 100)}%`,
             top: `${Math.min(80, textEingabe.pos.y * 100)}%`,
@@ -526,12 +526,12 @@ export function TelestrationCanvas({
               }
             }}
             placeholder="Textbox-Text + Enter"
-            className="w-44 bg-transparent px-1.5 text-xs text-white focus:outline-none"
+            className="w-44 bg-transparent px-1.5 text-xs text-sl-heading placeholder:text-sl-subtle focus:outline-none"
           />
           <button
             type="button"
             onClick={uebernehmeText}
-            className="rounded bg-[#F59E0B] px-2 py-0.5 text-[11px] font-semibold text-[#0B0E11]"
+            className="rounded bg-sl-accent px-2 py-0.5 text-[11px] font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
           >
             OK
           </button>

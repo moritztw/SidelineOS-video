@@ -244,7 +244,7 @@ export function PreviewApp() {
   useEffect(() => installierePreviewFetchBridge(speicher), [speicher]);
 
   const tabs = useMemo(
-    () => plugin.getTabs({ teamRolle: rolle, locale: 'de' }),
+    () => plugin.getTabs?.({ teamRolle: rolle, locale: 'de' }) ?? [],
     [rolle]
   );
 
@@ -254,7 +254,7 @@ export function PreviewApp() {
     gewaehlteSaison: saison,
     benutzer: INITIAL_USER,
     locale: 'de',
-    aktuellerTab: tab,
+    aktuellerTab: tab ?? plugin.defaultTab ?? 'library',
     onTabWechseln: (next) => {
       setAnsicht('plugin');
       setTab(next);
@@ -279,15 +279,15 @@ export function PreviewApp() {
   const PrimaerAktion = plugin.PrimaerAktion;
 
   const content = (
-    <div className="min-h-screen bg-[#0B0E11] text-[#E6EDF3]">
-      <header className="sticky top-0 z-30 border-b border-[#232933] bg-[#0B0E11]/95 backdrop-blur-sm">
+    <div className="min-h-screen bg-sl-canvas text-sl-primary">
+      <header className="sticky top-0 z-30 border-b border-sl-border bg-sl-canvas/95 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-6 px-6">
           <div className="flex items-center gap-3 shrink-0">
-            <span className="font-display text-base font-bold text-white">
-              Sideline<span className="text-[#F59E0B]">OS</span>
+            <span className="font-display text-base font-bold text-sl-heading">
+              Sideline<span className="text-sl-accent">OS</span>
             </span>
-            <span className="text-[#36404F]">/</span>
-            <span className="text-xs font-medium text-[#8B949E]">{plugin.manifest.name}</span>
+            <span className="text-sl-border-strong">/</span>
+            <span className="text-xs font-medium text-sl-muted">{plugin.manifest.name}</span>
           </div>
 
           <nav className="flex items-center gap-1">
@@ -301,8 +301,8 @@ export function PreviewApp() {
                 }}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap ${
                   ansicht === 'plugin' && tab === item.id
-                    ? 'bg-[#232933] text-white'
-                    : 'text-[#8B949E] hover:text-white'
+                    ? 'bg-sl-elevated text-sl-heading'
+                    : 'text-sl-muted hover:text-sl-heading'
                 }`}
               >
                 {item.label}
@@ -313,8 +313,8 @@ export function PreviewApp() {
               onClick={() => setAnsicht('settings')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap ${
                 ansicht === 'settings'
-                  ? 'bg-[#232933] text-white'
-                  : 'text-[#8B949E] hover:text-white'
+                  ? 'bg-sl-elevated text-sl-heading'
+                  : 'text-sl-muted hover:text-sl-heading'
               }`}
             >
               Einstellungen
@@ -326,7 +326,7 @@ export function PreviewApp() {
               aria-label="Saison wählen"
               value={saison}
               onChange={(e) => setSaison(e.target.value)}
-              className="rounded-md border border-[#232933] bg-[#13171D] px-2 py-1 text-xs text-white"
+              className="rounded-md border border-sl-border bg-sl-surface px-2 py-1 text-xs text-sl-heading"
             >
               <option value="2026">2026</option>
               <option value="2025">2025</option>
@@ -336,7 +336,7 @@ export function PreviewApp() {
               aria-label="Rolle testen"
               value={rolle}
               onChange={(e) => setRolle(e.target.value as TeamRolle)}
-              className="rounded-md border border-[#232933] bg-[#13171D] px-2 py-1 text-xs text-white"
+              className="rounded-md border border-sl-border bg-sl-surface px-2 py-1 text-xs text-sl-heading"
             >
               <option value="TEAM_ADMIN">Team Admin</option>
               <option value="COACH">Coach</option>
@@ -345,7 +345,7 @@ export function PreviewApp() {
             {PrimaerAktion && (
               <PrimaerAktion
                 ctx={laufzeitCtx}
-                className="rounded-md bg-[#F59E0B] px-3.5 py-1.5 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24] whitespace-nowrap shrink-0"
+                className="rounded-md bg-sl-accent px-3.5 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover whitespace-nowrap shrink-0"
               />
             )}
           </div>
@@ -368,7 +368,7 @@ export function PreviewApp() {
             )}
           </div>
         ) : (
-          plugin.renderMainView(laufzeitCtx)
+          plugin.renderMainView?.(laufzeitCtx)
         )}
       </main>
     </div>

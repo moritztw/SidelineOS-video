@@ -52,21 +52,21 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
 
   return (
     <section id="modul-video-hotkeys" className="sideline-video-root">
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-5">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-6 space-y-5">
       <div className="flex items-center gap-2.5">
-        <Keyboard className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
-        <h2 className="text-base font-semibold text-white">{t('settingsUserTitle')}</h2>
+        <Keyboard className="h-4 w-4 text-sl-accent" aria-hidden="true" />
+        <h2 className="text-base font-semibold text-sl-heading">{t('settingsUserTitle')}</h2>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="space-y-1 text-xs">
-          <span className="text-[#8B949E]">Standard-Kommentar-Ecke</span>
+          <span className="text-sl-muted">Standard-Kommentar-Ecke</span>
           <select
             value={prefs.defaultCorner}
             onChange={(e) =>
               speicherePrefs({ ...prefs, defaultCorner: e.target.value as EckPosition })
             }
-            className="w-full rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs text-white"
+            className="w-full rounded-md border border-sl-border bg-sl-canvas px-3 py-2 text-xs text-sl-heading"
           >
             <option value="top-left">Oben links</option>
             <option value="top-right">Oben rechts</option>
@@ -76,13 +76,13 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
         </label>
 
         <label className="space-y-1 text-xs">
-          <span className="text-[#8B949E]">Standard-Tempo</span>
+          <span className="text-sl-muted">Standard-Tempo</span>
           <select
             value={prefs.defaultPlaybackRate}
             onChange={(e) =>
               speicherePrefs({ ...prefs, defaultPlaybackRate: Number(e.target.value) })
             }
-            className="w-full rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs text-white"
+            className="w-full rounded-md border border-sl-border bg-sl-canvas px-3 py-2 text-xs text-sl-heading"
           >
             <option value={0.5}>0.5x</option>
             <option value={1}>1.0x</option>
@@ -90,28 +90,28 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
           </select>
         </label>
 
-        <label className="flex items-center gap-2 pt-5 text-xs text-[#E6EDF3]">
+        <label className="flex items-center gap-2 pt-5 text-xs text-sl-primary">
           <input
             type="checkbox"
             checked={prefs.autoStopEnabled}
             onChange={(e) =>
               speicherePrefs({ ...prefs, autoStopEnabled: e.target.checked })
             }
-            className="accent-[#F59E0B]"
+            className="accent-sl-accent"
           />
           Auto-Stop an Notiz-/Zeichnungs-Frames aktiv
         </label>
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-white">Persönliche Hotkeys</div>
+        <div className="text-xs font-semibold text-sl-heading">Persönliche Hotkeys</div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {(Object.keys(STANDARD_HOTKEYS) as HotkeyAktion[]).map((aktion) => (
             <div
               key={aktion}
-              className="flex items-center justify-between rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs"
+              className="flex items-center justify-between rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-xs"
             >
-              <span className="text-[#E6EDF3]">
+              <span className="text-sl-primary">
                 {HOTKEY_AKTION_LABELS[aktion][ctx.locale === 'en' ? 'en' : 'de']}
               </span>
               <button
@@ -139,8 +139,8 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
                 }}
                 className={`rounded px-2.5 py-1 font-mono text-xs ${
                   aufnahmeAktion === aktion
-                    ? 'bg-[#F59E0B] font-semibold text-[#0B0E11]'
-                    : 'bg-[#13171D] text-[#E6EDF3]'
+                    ? 'bg-sl-accent font-semibold text-sl-accent-contrast'
+                    : 'bg-sl-surface text-sl-primary'
                 }`}
               >
                 {aufnahmeAktion === aktion
@@ -150,7 +150,7 @@ export function VideoUserSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
             </div>
           ))}
         </div>
-        {konfliktHinweis && <p className="text-xs text-red-300">{konfliktHinweis}</p>}
+        {konfliktHinweis && <p className="text-xs text-sl-danger-text">{konfliktHinweis}</p>}
       </div>
       </div>
     </section>
@@ -172,10 +172,10 @@ export function VideoTeamSettingsPanel({ ctx }: { ctx: PluginSettingsKontext }) 
 
   return (
     <section id="modul-video-tagging-schema" className="sideline-video-root">
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-4">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-6 space-y-4">
         <div className="flex items-center gap-2.5">
-          <Tag className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
-          <h2 className="text-base font-semibold text-white">{t('settingsTeamTitle')}</h2>
+          <Tag className="h-4 w-4 text-sl-accent" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-sl-heading">{t('settingsTeamTitle')}</h2>
         </div>
         <TaggingSchemaSettings
           schema={schema}
@@ -194,24 +194,24 @@ export function VideoSysadminSettingsPanel({ ctx }: { ctx: PluginSettingsKontext
   const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
   return (
     <section id="modul-video-s3-cleanup" className="sideline-video-root">
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-3">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-6 space-y-3">
         <div className="flex items-center gap-2.5">
-          <HardDrive className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
-          <h2 className="text-base font-semibold text-white">{t('settingsSysadminTitle')}</h2>
+          <HardDrive className="h-4 w-4 text-sl-accent" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-sl-heading">{t('settingsSysadminTitle')}</h2>
         </div>
-        <p className="text-xs text-[#8B949E]">
+        <p className="text-xs text-sl-muted">
           DSGVO-konforme S3-Isolation ohne Einsicht in Team-Videos oder Coach-Notizen.
         </p>
         <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-          <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
-            <dt className="text-[#8B949E]">Anonymisierter S3-Präfix</dt>
-            <dd className="mt-0.5 font-mono text-white">
+          <div className="rounded-lg border border-sl-border bg-sl-canvas px-3 py-2.5">
+            <dt className="text-sl-muted">Anonymisierter S3-Präfix</dt>
+            <dd className="mt-0.5 font-mono text-sl-heading">
               teams/&lt;teamId&gt;/plugins/video-analysis/
             </dd>
           </div>
-          <div className="rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5">
-            <dt className="text-[#8B949E]">Cleanup-Schonfrist (Retention)</dt>
-            <dd className="mt-0.5 font-mono text-white video-tabular">
+          <div className="rounded-lg border border-sl-border bg-sl-canvas px-3 py-2.5">
+            <dt className="text-sl-muted">Cleanup-Schonfrist (Retention)</dt>
+            <dd className="mt-0.5 font-mono text-sl-heading video-tabular">
               {ctx.s3Konfig.cleanupRetentionDays ?? 14} Tage
             </dd>
           </div>

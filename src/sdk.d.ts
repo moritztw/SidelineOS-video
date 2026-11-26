@@ -16,6 +16,20 @@ declare module '@sidelineos/plugin-sdk' {
   export type SpielerUnit = 'OFFENSE' | 'DEFENSE' | 'SPECIAL_TEAMS';
   export type PluginId = string;
 
+  export type CoreBereich =
+    | 'hub'
+    | 'settings-hub'
+    | 'modul'
+    | 'settings'
+    | 'team-settings'
+    | 'sysadmin';
+
+  export type AppRouteModus =
+    | { art: 'app' }
+    | { art: 'login' }
+    | { art: 'invite'; token: string }
+    | { art: 'share'; token: string };
+
   export interface ProfilCustomFeld {
     key: string;
     label: string;
@@ -35,6 +49,7 @@ declare module '@sidelineos/plugin-sdk' {
     istSysadmin: boolean;
     erstelltAm: string;
     preferredLocale?: UnterstuetzteSprache;
+    preferredTheme?: string;
     customProfilWerte: Record<string, string>;
   }
 
@@ -67,6 +82,68 @@ declare module '@sidelineos/plugin-sdk' {
     sdkScope: '@sidelineos/plugin-sdk';
     paketFormat: 'sideline-plugin-v1';
   }
+
+  export type SidelineCssToken =
+    | '--sl-color-scheme'
+    | '--sl-bg-canvas'
+    | '--sl-bg-topbar'
+    | '--sl-bg-surface'
+    | '--sl-bg-elevated'
+    | '--sl-border'
+    | '--sl-border-strong'
+    | '--sl-text-heading'
+    | '--sl-text-primary'
+    | '--sl-text-muted'
+    | '--sl-text-subtle'
+    | '--sl-accent'
+    | '--sl-accent-hover'
+    | '--sl-accent-contrast'
+    | '--sl-danger'
+    | '--sl-danger-text'
+    | '--sl-success'
+    | '--sl-success-text'
+    | '--sl-warning-text';
+
+  export interface SidelineCssTokenDefinition {
+    cssVar: `--sl-${string}`;
+    tailwindColor?: string;
+    defaultValue: string;
+    beschreibung: string;
+  }
+
+  export interface TeamAkzentTokens {
+    '--sl-accent': string;
+    '--sl-accent-hover': string;
+    '--sl-accent-contrast': '#0B0E11' | '#FFFFFF';
+  }
+
+  export interface PluginThemePreset {
+    id: string;
+    name: string;
+    beschreibung?: string;
+    colorScheme: 'dark' | 'light';
+    tokens: Partial<Record<SidelineCssToken, string>>;
+    overrideTeamAccent?: boolean;
+  }
+
+  export interface VerfuegbaresThemeEintrag {
+    themeRef: string;
+    pluginId: string | null;
+    pluginName: string | null;
+    preset: PluginThemePreset;
+  }
+
+  export interface AufgeloestesThemeErgebnis {
+    themeRef: string;
+    quelle: 'user' | 'instance' | 'core';
+    pluginId: string | null;
+    pluginName: string | null;
+    preset: PluginThemePreset;
+  }
+
+  export type GeparsteThemeRef =
+    | { typ: 'core' }
+    | { typ: 'plugin'; pluginId: string; themeId: string };
 
   export type PluginPermission =
     | 'team:read'
@@ -104,6 +181,7 @@ declare module '@sidelineos/plugin-sdk' {
     icon: PluginIconName;
     status: 'AKTIV' | 'VORSCHAU';
     standardAktiviert: boolean;
+    hideHubTile?: boolean;
     permissions: PluginPermission[];
     dbPrefix: string;
     s3Prefix?: string;
@@ -112,6 +190,7 @@ declare module '@sidelineos/plugin-sdk' {
       team?: PluginSettingsAnker[];
       sysadmin?: PluginSettingsAnker[];
     };
+    themes?: PluginThemePreset[];
   }
 
   export interface PluginTab {
@@ -138,6 +217,24 @@ declare module '@sidelineos/plugin-sdk' {
     aktiveTeamAnsicht: TeamRolle | null;
     s3Konfig: S3Konfiguration;
     locale: string;
+  }
+
+  export interface PluginProviderKontext {
+    pluginId: PluginId;
+    team: TeamKontext | null;
+    aktiveTeamAnsicht: TeamRolle | null;
+    gewaehlteSaison: string | null;
+    benutzer: BenutzerKonto | null;
+    locale: string;
+    bereich: CoreBereich;
+    routeArt: AppRouteModus['art'];
+    istGlobalAktiv: boolean;
+    istFuerAktivesTeamAktiv: boolean;
+  }
+
+  export interface PluginProviderProps {
+    children: ReactNode;
+    ctx?: PluginProviderKontext;
   }
 
   export interface PluginDbScope {
@@ -335,11 +432,11 @@ declare module '@sidelineos/plugin-sdk' {
 
   export interface SidelinePlugin {
     manifest: PluginManifest;
-    Provider?: ComponentType<{ children: ReactNode }>;
-    defaultTab: string;
-    getTabs: (ctx: { teamRolle: TeamRolle; locale?: string }) => PluginTab[];
+    Provider?: ComponentType<PluginProviderProps>;
+    defaultTab?: string;
+    getTabs?: (ctx: { teamRolle: TeamRolle; locale?: string }) => PluginTab[];
     PrimaerAktion?: ComponentType<{ ctx: PluginLaufzeitKontext; className: string }>;
-    renderMainView: (ctx: PluginLaufzeitKontext) => ReactNode;
+    renderMainView?: (ctx: PluginLaufzeitKontext) => ReactNode;
     renderPublicShareView?: (ctx: {
       token: string;
       locale?: string;
@@ -350,7 +447,13 @@ declare module '@sidelineos/plugin-sdk' {
       team?: ComponentType<{ ctx: PluginSettingsKontext }>;
       sysadmin?: ComponentType<{ ctx: PluginSettingsKontext }>;
     };
+    themes?: readonly PluginThemePreset[];
   }
+
+  export const SIDELINE_CSS_TOKENS: Record<string, SidelineCssTokenDefinition>;
+  export const SIDELINE_STANDARD_THEME_TOKENS: Record<SidelineCssToken, string>;
+  export const CORE_STANDARD_THEME_PRESET: PluginThemePreset;
+  export const STANDARD_THEME_REF: string;
 
   export function holeAktuelleBrandKonfig(explizitName?: string): BrandKonfiguration;
   export function teileWortmarke(produktName: string): { basis: string; akzent: string };
@@ -376,4 +479,26 @@ declare module '@sidelineos/plugin-sdk' {
     eintraege: readonly T[],
     saison: string
   ): T[];
+  export function normalisiereHexFarbe(raw?: string): string | null;
+  export function berechneRelativeLuminanz(hex: string): number;
+  export function ermittleKontrastTextFarbe(hex: string): '#0B0E11' | '#FFFFFF';
+  export function ermittleHoverAkzentFarbe(hex: string): string;
+  export function ermittleTeamAkzentTokens(primaerFarbe?: string): TeamAkzentTokens | null;
+  export function validiereThemeSlug(raw: unknown): string | null;
+  export function bauePluginThemeRef(pluginId: string, themeId: string): string;
+  export function parseThemeRef(raw: unknown): GeparsteThemeRef | null;
+  export function validiereThemeTokenWert(token: string, rawWert: unknown): string | null;
+  export function bereinigePluginThemePresets(raw: unknown): PluginThemePreset[];
+  export function sammleVerfuegbareThemes(
+    quellen: ReadonlyArray<{
+      pluginId: string;
+      pluginName: string;
+      themes?: readonly PluginThemePreset[];
+    }>
+  ): VerfuegbaresThemeEintrag[];
+  export function loeseAktivesThemeAuf(optionen: {
+    userPreferredTheme?: string | null;
+    instanceDefaultTheme?: string | null;
+    verfuegbareThemes: readonly VerfuegbaresThemeEintrag[];
+  }): AufgeloestesThemeErgebnis;
 }

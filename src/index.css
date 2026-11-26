@@ -1,16 +1,57 @@
 @import "tailwindcss";
 
-@theme {
+:root {
+  --sl-color-scheme: dark;
+  --sl-bg-canvas: #0b0e11;
+  --sl-bg-topbar: #0f1318;
+  --sl-bg-surface: #13171d;
+  --sl-bg-elevated: #1e2530;
+  --sl-border: #232933;
+  --sl-border-strong: #36404f;
+  --sl-text-heading: #ffffff;
+  --sl-text-primary: #e6edf3;
+  --sl-text-muted: #8b949e;
+  --sl-text-subtle: #6e7681;
+  --sl-accent: #f59e0b;
+  --sl-accent-hover: #fbbf24;
+  --sl-accent-contrast: #0b0e11;
+  --sl-danger: #dc2626;
+  --sl-danger-text: #fca5a5;
+  --sl-success: #16a34a;
+  --sl-success-text: #86efac;
+  --sl-warning-text: #fde68a;
+  color-scheme: var(--sl-color-scheme, dark);
+}
+
+@theme inline {
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-sl-canvas: var(--sl-bg-canvas);
+  --color-sl-topbar: var(--sl-bg-topbar);
+  --color-sl-surface: var(--sl-bg-surface);
+  --color-sl-elevated: var(--sl-bg-elevated);
+  --color-sl-border: var(--sl-border);
+  --color-sl-border-strong: var(--sl-border-strong);
+  --color-sl-heading: var(--sl-text-heading);
+  --color-sl-primary: var(--sl-text-primary);
+  --color-sl-muted: var(--sl-text-muted);
+  --color-sl-subtle: var(--sl-text-subtle);
+  --color-sl-accent: var(--sl-accent);
+  --color-sl-accent-hover: var(--sl-accent-hover);
+  --color-sl-accent-contrast: var(--sl-accent-contrast);
+  --color-sl-danger: var(--sl-danger);
+  --color-sl-danger-text: var(--sl-danger-text);
+  --color-sl-success: var(--sl-success);
+  --color-sl-success-text: var(--sl-success-text);
+  --color-sl-warning-text: var(--sl-warning-text);
 }
 
 @layer base {
   body {
     font-family: var(--font-sans);
-    background-color: #0b0e11;
-    color: #e6edf3;
+    background-color: var(--sl-bg-canvas);
+    color: var(--sl-text-primary);
     letter-spacing: 0.01em;
   }
 

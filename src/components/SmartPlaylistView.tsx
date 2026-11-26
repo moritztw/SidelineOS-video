@@ -93,8 +93,8 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     <section className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-xl font-bold text-white">{t('playlistsTitle')}</h1>
-          <p className="text-xs text-[#8B949E]">
+          <h1 className="text-xl font-bold text-sl-heading">{t('playlistsTitle')}</h1>
+          <p className="text-xs text-sl-muted">
             Typsicheres Filter-Grid über Standard- und Custom-Breakdown-Spalten.
           </p>
         </div>
@@ -103,7 +103,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             type="button"
             disabled={trefferPlays.length === 0}
             onClick={() => handleImFilmRoomStarten(trefferPlays.map((p) => p.id))}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#F59E0B] px-4 py-2 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24] disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-lg bg-sl-accent px-4 py-2 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover disabled:opacity-40"
           >
             <Play className="h-3.5 w-3.5" aria-hidden="true" />
             {trefferPlays.length} Treffer im Film Room öffnen
@@ -113,16 +113,16 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Regel-Editor */}
-        <div className="space-y-4 rounded-xl border border-[#232933] bg-[#13171D] p-5 lg:col-span-7">
+        <div className="space-y-4 rounded-xl border border-sl-border bg-sl-surface p-5 lg:col-span-7">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-white">
-              <ListFilter className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-sl-heading">
+              <ListFilter className="h-4 w-4 text-sl-accent" aria-hidden="true" />
               Filterregeln
             </div>
             <select
               value={matchMode}
               onChange={(e) => setMatchMode(e.target.value as 'ALL' | 'ANY')}
-              className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1 text-xs text-[#E6EDF3]"
+              className="rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1 text-xs text-sl-primary"
             >
               <option value="ALL">Alle Bedingungen (UND)</option>
               <option value="ANY">Mindestens eine (ODER)</option>
@@ -141,7 +141,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       )
                     )
                   }
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1.5 text-xs text-white"
+                  className="rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1.5 text-xs text-sl-heading"
                 >
                   {aktiveFelder.map((f) => (
                     <option key={f.key} value={f.key}>
@@ -161,7 +161,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       )
                     )
                   }
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1.5 text-xs text-white"
+                  className="rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1.5 text-xs text-sl-heading"
                 >
                   {OPERATOREN.map((op) => (
                     <option key={op.id} value={op.id}>
@@ -182,14 +182,14 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       )
                     }
                     placeholder="Wert..."
-                    className="flex-1 min-w-[120px] rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1.5 text-xs text-white focus:border-[#F59E0B] focus:outline-none"
+                    className="flex-1 min-w-[120px] rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1.5 text-xs text-sl-heading focus:border-sl-accent focus:outline-none"
                   />
                 )}
 
                 <button
                   type="button"
                   onClick={() => setRegeln((alt) => alt.filter((r) => r.id !== regel.id))}
-                  className="rounded-md p-1.5 text-[#8B949E] hover:bg-red-950/50 hover:text-red-300"
+                  className="rounded-md p-1.5 text-sl-muted hover:bg-sl-danger/15 hover:text-sl-danger-text"
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -197,11 +197,11 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#232933] pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sl-border pt-3">
             <button
               type="button"
               onClick={handleRegelHinzufuegen}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-[#E6EDF3] hover:border-[#F59E0B]"
+              className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-primary hover:border-sl-accent"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               Regel hinzufügen
@@ -213,12 +213,12 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Cutup-Name..."
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white focus:border-[#F59E0B] focus:outline-none"
+                className="rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-heading focus:border-sl-accent focus:outline-none"
               />
               <button
                 type="button"
                 onClick={handlePlaylistSpeichern}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#232933] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#36404F]"
+                className="inline-flex items-center gap-1.5 rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
               >
                 <Save className="h-3.5 w-3.5" aria-hidden="true" />
                 Speichern
@@ -228,10 +228,10 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         </div>
 
         {/* Gespeicherte Cutups */}
-        <div className="space-y-3 rounded-xl border border-[#232933] bg-[#13171D] p-5 lg:col-span-5">
-          <h2 className="text-sm font-semibold text-white">Gespeicherte Cutups</h2>
+        <div className="space-y-3 rounded-xl border border-sl-border bg-sl-surface p-5 lg:col-span-5">
+          <h2 className="text-sm font-semibold text-sl-heading">Gespeicherte Cutups</h2>
           {playlists.length === 0 ? (
-            <p className="text-xs text-[#8B949E]">
+            <p className="text-xs text-sl-muted">
               Noch keine gespeicherten Smart Playlists für diese Saison.
             </p>
           ) : (
@@ -239,7 +239,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               {playlists.map((pl) => (
                 <div
                   key={pl.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2.5"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-sl-border bg-sl-canvas px-3 py-2.5"
                 >
                   <button
                     type="button"
@@ -249,8 +249,8 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     }}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="truncate text-xs font-semibold text-white">{pl.name}</div>
-                    <div className="text-[11px] text-[#8B949E] video-tabular">
+                    <div className="truncate text-xs font-semibold text-sl-heading">{pl.name}</div>
+                    <div className="text-[11px] text-sl-muted video-tabular">
                       {pl.rules.length} Regeln · {pl.playIds.length} Spielzüge
                     </div>
                   </button>
@@ -260,7 +260,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       await videoApi.loeschePlaylist(ctx.team.id, pl.id);
                       setPlaylists(playlists.filter((p) => p.id !== pl.id));
                     }}
-                    className="rounded p-1.5 text-[#8B949E] hover:text-red-300"
+                    className="rounded p-1.5 text-sl-muted hover:text-sl-danger-text"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>

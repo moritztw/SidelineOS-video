@@ -74,16 +74,16 @@ export function TeamShareModal({
       aria-modal="true"
       aria-label={t('shareModalTitle')}
     >
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-5">
-        <div className="flex items-center justify-between border-b border-[#232933] pb-4">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-sl-border bg-sl-surface p-6 space-y-5">
+        <div className="flex items-center justify-between border-b border-sl-border pb-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">{t('shareModalTitle')}</h2>
-            <p className="text-xs text-[#8B949E]">{reel.title}</p>
+            <h2 className="text-lg font-semibold text-sl-heading">{t('shareModalTitle')}</h2>
+            <p className="text-xs text-sl-muted">{reel.title}</p>
           </div>
           <button
             type="button"
             onClick={onSchliessen}
-            className="rounded-md p-1.5 text-[#8B949E] hover:bg-[#232933] hover:text-white"
+            className="rounded-md p-1.5 text-sl-muted hover:bg-sl-elevated hover:text-sl-heading"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -92,7 +92,7 @@ export function TeamShareModal({
         {/* Granulare Spaltenauswahl */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-sl-heading">
               Freigegebene Breakdown-Spalten (Coach-Notizen &amp; Zeichnungen bleiben immer privat)
             </span>
             <button
@@ -104,19 +104,19 @@ export function TeamShareModal({
                     : alleFelder.map((f) => f.key)
                 )
               }
-              className="text-[#F59E0B] hover:underline"
+              className="text-sl-accent hover:underline"
             >
               Alle umschalten
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 rounded-lg border border-[#232933] bg-[#0B0E11] p-3 sm:grid-cols-4">
+          <div className="grid grid-cols-3 gap-2 rounded-lg border border-sl-border bg-sl-canvas p-3 sm:grid-cols-4">
             {alleFelder.map((feld) => (
-              <label key={feld.key} className="inline-flex items-center gap-1.5 text-xs text-[#E6EDF3]">
+              <label key={feld.key} className="inline-flex items-center gap-1.5 text-xs text-sl-primary">
                 <input
                   type="checkbox"
                   checked={ausgewaehlteFelder.includes(feld.key)}
                   onChange={() => toggleFeld(feld.key)}
-                  className="accent-[#F59E0B]"
+                  className="accent-sl-accent"
                 />
                 <span className="truncate">{feld.label}</span>
               </label>
@@ -125,9 +125,9 @@ export function TeamShareModal({
         </div>
 
         {/* Team-zu-Team-Austausch */}
-        <div className="space-y-2 rounded-lg border border-[#232933] bg-[#0B0E11] p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-white">
-            <Users className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+        <div className="space-y-2 rounded-lg border border-sl-border bg-sl-canvas p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-sl-heading">
+            <Users className="h-4 w-4 text-sl-accent" aria-hidden="true" />
             Team-zu-Team Austausch
           </div>
           <div className="flex items-center gap-2">
@@ -136,12 +136,12 @@ export function TeamShareModal({
               value={targetTeamId}
               onChange={(e) => setTargetTeamId(e.target.value)}
               placeholder="Ziel-Team-ID oder Federation-Target..."
-              className="flex-1 rounded-md border border-[#232933] bg-[#13171D] px-3 py-1.5 text-xs text-white focus:border-[#F59E0B] focus:outline-none"
+              className="flex-1 rounded-md border border-sl-border bg-sl-surface px-3 py-1.5 text-xs text-sl-heading focus:border-sl-accent focus:outline-none"
             />
             <button
               type="button"
               onClick={handleTeamShare}
-              className="rounded-md bg-[#232933] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#36404F]"
+              className="rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
             >
               An Team teilen
             </button>
@@ -149,9 +149,9 @@ export function TeamShareModal({
         </div>
 
         {/* Öffentlicher /share/<token>-Link */}
-        <div className="space-y-3 rounded-lg border border-[#232933] bg-[#0B0E11] p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-white">
-            <Link2 className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+        <div className="space-y-3 rounded-lg border border-sl-border bg-sl-canvas p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-sl-heading">
+            <Link2 className="h-4 w-4 text-sl-accent" aria-hidden="true" />
             Öffentlicher Download-Link (/share/&lt;token&gt;)
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -159,12 +159,12 @@ export function TeamShareModal({
               type="text"
               value={linkLabel}
               onChange={(e) => setLinkLabel(e.target.value)}
-              className="flex-1 min-w-[160px] rounded-md border border-[#232933] bg-[#13171D] px-3 py-1.5 text-xs text-white"
+              className="flex-1 min-w-[160px] rounded-md border border-sl-border bg-sl-surface px-3 py-1.5 text-xs text-sl-heading"
             />
             <select
               value={laufzeitTage}
               onChange={(e) => setLaufzeitTage(Number(e.target.value))}
-              className="rounded-md border border-[#232933] bg-[#13171D] px-2.5 py-1.5 text-xs text-white"
+              className="rounded-md border border-sl-border bg-sl-surface px-2.5 py-1.5 text-xs text-sl-heading"
             >
               <option value={1}>1 Tag</option>
               <option value={7}>7 Tage</option>
@@ -173,22 +173,22 @@ export function TeamShareModal({
             <button
               type="button"
               onClick={handleLinkErstellen}
-              className="rounded-md bg-[#F59E0B] px-3 py-1.5 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24]"
+              className="rounded-md bg-sl-accent px-3 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
             >
               Link erzeugen
             </button>
           </div>
 
           {neuerToken && (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-[#F59E0B]/50 bg-[#13171D] px-3 py-2 text-xs">
-              <code className="truncate font-mono text-[#F59E0B]">/share/{neuerToken}</code>
+            <div className="flex items-center justify-between gap-2 rounded-md border border-sl-accent/50 bg-sl-surface px-3 py-2 text-xs">
+              <code className="truncate font-mono text-sl-accent">/share/{neuerToken}</code>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() =>
                     navigator.clipboard?.writeText(`${window.location.origin}/share/${neuerToken}`)
                   }
-                  className="inline-flex items-center gap-1 rounded bg-[#232933] px-2 py-1 text-white"
+                  className="inline-flex items-center gap-1 rounded bg-sl-elevated px-2 py-1 text-sl-heading"
                 >
                   <Copy className="h-3 w-3" aria-hidden="true" /> Kopieren
                 </button>
@@ -196,7 +196,7 @@ export function TeamShareModal({
                   <button
                     type="button"
                     onClick={() => ctx.onPublicShareOeffnen?.(neuerToken)}
-                    className="inline-flex items-center gap-1 rounded bg-[#232933] px-2 py-1 text-white"
+                    className="inline-flex items-center gap-1 rounded bg-sl-elevated px-2 py-1 text-sl-heading"
                   >
                     <ExternalLink className="h-3 w-3" aria-hidden="true" /> Vorschau
                   </button>
@@ -210,7 +210,7 @@ export function TeamShareModal({
               {links.map((l) => (
                 <div
                   key={l.id}
-                  className="flex items-center justify-between text-xs text-[#8B949E]"
+                  className="flex items-center justify-between text-xs text-sl-muted"
                 >
                   <span>
                     {l.label} · läuft ab {l.expiresAt.slice(0, 10)}{' '}
@@ -227,7 +227,7 @@ export function TeamShareModal({
                           )
                         );
                       }}
-                      className="inline-flex items-center gap-1 text-red-300 hover:underline"
+                      className="inline-flex items-center gap-1 text-sl-danger-text hover:underline"
                     >
                       <Trash2 className="h-3 w-3" aria-hidden="true" /> Widerrufen
                     </button>
@@ -238,7 +238,7 @@ export function TeamShareModal({
           )}
         </div>
 
-        {hinweis && <p className="text-xs text-[#F59E0B]">{hinweis}</p>}
+        {hinweis && <p className="text-xs text-sl-accent">{hinweis}</p>}
       </div>
     </div>
   );

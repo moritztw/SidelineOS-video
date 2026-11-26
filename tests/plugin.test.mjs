@@ -68,14 +68,31 @@ test('plugin.manifest.json erfüllt alle Validierungsregeln von SidelineOS-Core 
 test('dist/client.js, dist/client.css und dist/server.js erfüllen die Core-Verträge', async () => {
   const clientCode = await fs.readFile(path.join(ROOT_DIR, 'dist/client.js'), 'utf8');
   const clientCss = await fs.readFile(path.join(ROOT_DIR, 'dist/client.css'), 'utf8');
+  const sdkDts = await fs.readFile(path.join(ROOT_DIR, 'src/sdk.d.ts'), 'utf8');
   const serverMod = await import(path.join(ROOT_DIR, 'dist/server.js'));
 
   assert.match(clientCode, /from\s+["']@sidelineos\/plugin-sdk["']/);
   assert.match(clientCode, /from\s+["']react\/jsx-runtime["']/);
   assert.doesNotMatch(clientCode, /dangerouslySetInnerHTML/);
   assert.match(clientCode, /export\s*\{[\s\S]*default[\s\S]*\}/);
+  assert.match(clientCode, /bg-sl-surface/);
+  assert.match(clientCode, /text-sl-heading/);
+  assert.match(clientCode, /bg-sl-accent/);
+  assert.match(clientCode, /text-sl-accent-contrast/);
+
+  // Core Issue #13: SDK-Typen (Themes, Headless-Provider, sl-*-Tokens) vorhanden
+  assert.match(sdkDts, /hideHubTile\?: boolean/);
+  assert.match(sdkDts, /themes\?: PluginThemePreset\[\]/);
+  assert.match(sdkDts, /preferredTheme\?: string/);
+  assert.match(sdkDts, /export interface PluginProviderKontext/);
+  assert.match(sdkDts, /export interface PluginProviderProps/);
+  assert.match(sdkDts, /export const SIDELINE_CSS_TOKENS/);
+
   assert.ok(clientCss.length > 100);
   assert.match(clientCss, /\.sideline-video-root\s*\{[\s\S]*?\.grid-cols-1\s*\{/);
+  assert.match(clientCss, /var\(--sl-bg-surface\)/);
+  assert.match(clientCss, /var\(--sl-text-primary\)/);
+  assert.match(clientCss, /var\(--sl-accent\)/);
   assert.doesNotMatch(clientCss, /:root\b/);
   assert.doesNotMatch(clientCss, /@layer\s+utilities/);
   assert.doesNotMatch(clientCss, /^\.(grid-cols-1|hidden|block|sticky|flex|grid)\s*\{/m);

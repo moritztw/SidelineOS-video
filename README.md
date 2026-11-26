@@ -13,7 +13,7 @@ Eigenständiges Videoanalyse-, Film-Room-, Tagging- und Austausch-Plugin für **
 ## Lokale Entwicklung & Prüfung
 
 ```bash
-npm install --omit=peer
+npm install --legacy-peer-deps
 npm run lint         # TypeScript-Prüfung (tsc --noEmit)
 npm test             # Build + Contract- & Domänen-Tests (node:test)
 npm run pack:plugin  # Erzeugt build-release/sideline-plugin-v1.tar.gz + .sha256
@@ -22,14 +22,14 @@ npm run pack:plugin  # Erzeugt build-release/sideline-plugin-v1.tar.gz + .sha256
 Für eine lokale UI-Vorschau ohne laufenden Core:
 
 ```bash
-npm run dev          # Lokaler Dev-Preview auf Port 3000 (mit SDK-Shim)
+npm run dev          # Lokaler Dev-Preview auf Port 3000 (mit SDK-Shim & sl-*-Tokens)
 ```
 
 ## Installation in SidelineOS-Core (`dev`)
 
 1. **Dev-Modus (`DEV_ALLOW_GIT_INSTALL=true`):** Im Sysadmin-Plugin-Store unter *Dev: Git Clone & Build* `https://github.com/moritztw/SidelineOS-video` angeben.
 2. **Offline-Upload:** `npm run pack:plugin` ausführen und `build-release/sideline-plugin-v1.tar.gz` (samt `.sha256`) im Plugin-Store hochladen.
-3. **GitHub Release:** Tag pushen (`git tag v0.1.0 && git push origin v0.1.0`) — die GitHub Action veröffentlicht `sideline-plugin-v1.tar.gz`, `.sha256` und `plugin.manifest.json`.
+3. **GitHub Release:** Tag pushen (`git tag v0.2.0 && git push origin v0.2.0`) — die GitHub Action veröffentlicht `sideline-plugin-v1.tar.gz`, `.sha256` und `plugin.manifest.json`.
 
 ## Lizenz
 

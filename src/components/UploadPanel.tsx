@@ -204,20 +204,20 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
       aria-modal="true"
       aria-label={t('uploadTitle')}
     >
-      <div className="w-full max-w-2xl rounded-xl border border-[#232933] bg-[#13171D] p-6 space-y-5">
-        <div className="flex items-center justify-between border-b border-[#232933] pb-4">
-          <h2 className="text-lg font-semibold text-white">{t('uploadTitle')}</h2>
+      <div className="w-full max-w-2xl rounded-xl border border-sl-border bg-sl-surface p-6 space-y-5">
+        <div className="flex items-center justify-between border-b border-sl-border pb-4">
+          <h2 className="text-lg font-semibold text-sl-heading">{t('uploadTitle')}</h2>
           <button
             type="button"
             onClick={() => setUploadModalOffen(false)}
-            className="rounded-md p-1.5 text-[#8B949E] hover:bg-[#232933] hover:text-white"
+            className="rounded-md p-1.5 text-sl-muted hover:bg-sl-elevated hover:text-sl-heading"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
         {/* Modus-Umschalter */}
-        <div className="grid grid-cols-3 gap-1 rounded-lg border border-[#232933] bg-[#0B0E11] p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-sl-border bg-sl-canvas p-1">
           {(
             [
               { id: 'CLIP_FILE', label: t('uploadModeClips') },
@@ -231,8 +231,8 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
               onClick={() => setModus(item.id)}
               className={`rounded-md px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
                 modus === item.id
-                  ? 'bg-[#232933] text-white'
-                  : 'text-[#8B949E] hover:text-[#E6EDF3]'
+                  ? 'bg-sl-elevated text-sl-heading'
+                  : 'text-sl-muted hover:text-sl-primary'
               }`}
             >
               {item.label}
@@ -244,30 +244,30 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-xs">
-                <span className="text-[#8B949E]">Titel</span>
+                <span className="text-sl-muted">Titel</span>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="z. B. Week 4 vs. Berlin Rebels"
-                  className="w-full rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-sm text-white focus:border-[#F59E0B] focus:outline-none"
+                  className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading focus:border-sl-accent focus:outline-none"
                 />
               </label>
               <label className="space-y-1 text-xs">
-                <span className="text-[#8B949E]">Datum</span>
+                <span className="text-sl-muted">Datum</span>
                 <input
                   type="date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-sm text-white focus:border-[#F59E0B] focus:outline-none"
+                  className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading focus:border-sl-accent focus:outline-none"
                 />
               </label>
               <label className="space-y-1 text-xs">
-                <span className="text-[#8B949E]">Kategorie</span>
+                <span className="text-sl-muted">Kategorie</span>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as VideoKategorie)}
-                  className="w-full rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-sm text-white focus:border-[#F59E0B] focus:outline-none"
+                  className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading focus:border-sl-accent focus:outline-none"
                 >
                   <option value="GAME">{t('catGame')}</option>
                   <option value="PRACTICE">{t('catPractice')}</option>
@@ -276,11 +276,11 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 </select>
               </label>
               <label className="space-y-1 text-xs">
-                <span className="text-[#8B949E]">Sichtbarkeit</span>
+                <span className="text-sl-muted">Sichtbarkeit</span>
                 <select
                   value={visibility}
                   onChange={(e) => setVisibility(e.target.value as SichtbarkeitsStufe)}
-                  className="w-full rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-sm text-white focus:border-[#F59E0B] focus:outline-none"
+                  className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading focus:border-sl-accent focus:outline-none"
                 >
                   <option value="COACHES_ONLY">{t('visCoachesOnly')}</option>
                   <option value="ALL_PLAYERS">{t('visAllPlayers')}</option>
@@ -292,51 +292,51 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
             </div>
 
             {modus === 'CLIP_FILE' ? (
-              <div className="space-y-3 rounded-lg border border-[#232933] bg-[#0B0E11] p-4">
+              <div className="space-y-3 rounded-lg border border-sl-border bg-sl-canvas p-4">
                 <label className="block space-y-1 text-xs">
-                  <span className="text-[#E6EDF3]">Sideline-Clips (Pflicht)</span>
+                  <span className="text-sl-primary">Sideline-Clips (Pflicht)</span>
                   <input
                     type="file"
                     multiple
                     accept="video/*"
                     onChange={(e) => setSidelineFiles(Array.from(e.target.files ?? []))}
-                    className="block w-full text-xs text-[#8B949E] file:mr-3 file:rounded-md file:border-0 file:bg-[#232933] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
+                    className="block w-full text-xs text-sl-muted file:mr-3 file:rounded-md file:border-0 file:bg-sl-elevated file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-sl-heading"
                   />
                 </label>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block space-y-1 text-xs">
-                    <span className="text-[#E6EDF3]">Endzone-Clips (Optional)</span>
+                    <span className="text-sl-primary">Endzone-Clips (Optional)</span>
                     <input
                       type="file"
                       multiple
                       accept="video/*"
                       onChange={(e) => setEndzoneFiles(Array.from(e.target.files ?? []))}
-                      className="block w-full text-xs text-[#8B949E] file:mr-3 file:rounded-md file:border-0 file:bg-[#232933] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
+                      className="block w-full text-xs text-sl-muted file:mr-3 file:rounded-md file:border-0 file:bg-sl-elevated file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-sl-heading"
                     />
                   </label>
                   <label className="block space-y-1 text-xs">
-                    <span className="text-[#8B949E]">Optionaler Offset (ms, kein Sync-Zwang)</span>
+                    <span className="text-sl-muted">Optionaler Offset (ms, kein Sync-Zwang)</span>
                     <input
                       type="number"
                       value={endzoneOffsetMs}
                       onChange={(e) => setEndzoneOffsetMs(e.target.value)}
                       placeholder="leer = kein Offset"
-                      className="w-full rounded-lg border border-[#232933] bg-[#13171D] px-3 py-1.5 text-sm text-white video-tabular focus:border-[#F59E0B] focus:outline-none"
+                      className="w-full rounded-lg border border-sl-border bg-sl-surface px-3 py-1.5 text-sm text-sl-heading video-tabular focus:border-sl-accent focus:outline-none"
                     />
                   </label>
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-[#232933] bg-[#0B0E11] p-4">
+              <div className="rounded-lg border border-sl-border bg-sl-canvas p-4">
                 <label className="block space-y-1.5 text-xs">
-                  <span className="text-[#E6EDF3]">
+                  <span className="text-sl-primary">
                     Durchgehende Videodatei (Segmente im Sync & Fast-Cut Editor zuschneiden)
                   </span>
                   <input
                     type="file"
                     accept="video/*"
                     onChange={(e) => setSingleTapeFile(e.target.files?.[0] ?? null)}
-                    className="block w-full text-xs text-[#8B949E] file:mr-3 file:rounded-md file:border-0 file:bg-[#232933] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
+                    className="block w-full text-xs text-sl-muted file:mr-3 file:rounded-md file:border-0 file:bg-sl-elevated file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-sl-heading"
                   />
                 </label>
               </div>
@@ -344,9 +344,9 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </div>
         ) : (
           <div className="space-y-3">
-            <label className="flex items-center justify-between rounded-lg border border-dashed border-[#36404F] bg-[#0B0E11] px-4 py-3 text-xs text-[#8B949E]">
-              <span className="inline-flex items-center gap-2 text-[#E6EDF3]">
-                <FileJson className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+            <label className="flex items-center justify-between rounded-lg border border-dashed border-sl-border-strong bg-sl-canvas px-4 py-3 text-xs text-sl-muted">
+              <span className="inline-flex items-center gap-2 text-sl-primary">
+                <FileJson className="h-4 w-4 text-sl-accent" aria-hidden="true" />
                 sideline-bundle.json (v1.0) auswählen
               </span>
               <input
@@ -361,20 +361,20 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
               value={bundleText}
               onChange={(e) => setBundleText(e.target.value)}
               placeholder='{"schema_version":"1.0","reel":{...},"angles":["SIDELINE"],"plays":[...]}'
-              className="w-full rounded-lg border border-[#232933] bg-[#0B0E11] p-3 font-mono text-xs text-[#E6EDF3] focus:border-[#F59E0B] focus:outline-none"
+              className="w-full rounded-lg border border-sl-border bg-sl-canvas p-3 font-mono text-xs text-sl-primary focus:border-sl-accent focus:outline-none"
             />
           </div>
         )}
 
         {fortschritt !== null && (
           <div className="space-y-1">
-            <div className="flex justify-between text-xs text-[#8B949E] video-tabular">
+            <div className="flex justify-between text-xs text-sl-muted video-tabular">
               <span>S3 Upload</span>
               <span>{fortschritt}%</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0B0E11]">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-sl-canvas">
               <div
-                className="h-full bg-[#F59E0B] transition-all"
+                className="h-full bg-sl-accent transition-all"
                 style={{ width: `${fortschritt}%` }}
               />
             </div>
@@ -382,16 +382,16 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
         )}
 
         {fehler && (
-          <div className="rounded-lg border border-red-500/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">
+          <div className="rounded-lg border border-sl-danger/40 bg-sl-danger/10 px-3 py-2 text-xs text-sl-danger-text">
             {fehler}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 border-t border-[#232933] pt-4">
+        <div className="flex items-center justify-end gap-3 border-t border-sl-border pt-4">
           <button
             type="button"
             onClick={() => setUploadModalOffen(false)}
-            className="rounded-lg border border-[#232933] px-4 py-2 text-xs font-medium text-[#E6EDF3] hover:bg-[#232933]"
+            className="rounded-lg border border-sl-border px-4 py-2 text-xs font-medium text-sl-primary hover:bg-sl-elevated"
           >
             Abbrechen
           </button>
@@ -399,7 +399,7 @@ export function UploadPanel({ ctx }: { ctx: PluginLaufzeitKontext }) {
             type="button"
             disabled={laedt}
             onClick={handleImport}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#F59E0B] px-4 py-2 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24] disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-sl-accent px-4 py-2 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover disabled:opacity-50"
           >
             <Upload className="h-3.5 w-3.5" aria-hidden="true" />
             {laedt ? 'Importiere...' : 'Import starten'}

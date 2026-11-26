@@ -486,7 +486,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   if (!aktivesReel || !aktivesPlay) {
     return (
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-10 text-center text-sm text-[#8B949E]">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-10 text-center text-sm text-sl-muted">
         {t('filmRoomEmpty')}
       </div>
     );
@@ -525,13 +525,13 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-xl font-bold text-white">{t('syncTitle')}</h1>
-          <p className="text-xs text-[#8B949E]">
+          <h1 className="text-xl font-bold text-sl-heading">{t('syncTitle')}</h1>
+          <p className="text-xs text-sl-muted">
             {aktivesReel.title} · Dual-Viewport-Abgleich (optionaler Offset) &amp; Ein-Punkt-Fast-Cut
           </p>
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg border border-[#232933] bg-[#13171D] p-1">
+        <div className="flex items-center gap-1 rounded-lg border border-sl-border bg-sl-surface p-1">
           <button
             type="button"
             onClick={() => {
@@ -539,7 +539,9 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               setModus('SYNC');
             }}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
-              modus === 'SYNC' ? 'bg-[#F59E0B] text-[#0B0E11]' : 'text-[#8B949E] hover:text-white'
+              modus === 'SYNC'
+                ? 'bg-sl-accent text-sl-accent-contrast'
+                : 'text-sl-muted hover:text-sl-heading'
             }`}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
@@ -553,8 +555,8 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             }}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
               modus === 'FAST_CUT'
-                ? 'bg-[#F59E0B] text-[#0B0E11]'
-                : 'text-[#8B949E] hover:text-white'
+                ? 'bg-sl-accent text-sl-accent-contrast'
+                : 'text-sl-muted hover:text-sl-heading'
             }`}
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
@@ -564,7 +566,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       </header>
 
       {statusHinweis && (
-        <div className="flex items-center gap-2 rounded-lg border border-[#232933] bg-[#13171D] px-4 py-2.5 text-xs text-[#F59E0B]">
+        <div className="flex items-center gap-2 rounded-lg border border-sl-border bg-sl-surface px-4 py-2.5 text-xs text-sl-accent">
           <Check className="h-4 w-4" aria-hidden="true" />
           {statusHinweis}
         </div>
@@ -576,16 +578,16 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             ref={syncStageRef}
             className={
               istVollbild
-                ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-[#0B0E11] p-4'
+                ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-sl-canvas p-4'
                 : 'space-y-4 lg:col-span-8'
             }
           >
             {istVollbild && (
-              <div className="flex shrink-0 items-center justify-between rounded-lg border border-[#232933] bg-[#13171D] px-4 py-2 text-xs">
-                <span className="font-semibold text-white">
+              <div className="flex shrink-0 items-center justify-between rounded-lg border border-sl-border bg-sl-surface px-4 py-2 text-xs">
+                <span className="font-semibold text-sl-heading">
                   {aktivesReel.title} · Play #{aktivesPlay.playNumber}
                 </span>
-                <span className="font-mono text-[#F59E0B] video-tabular">
+                <span className="font-mono text-sl-accent video-tabular">
                   {formatiereFrameTimecode(syncPosMs)} · Offset {aktuellerOffset} ms
                 </span>
               </div>
@@ -600,15 +602,15 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             >
               {/* Master-Viewport */}
               <div
-                className={`rounded-xl border border-[#232933] bg-[#13171D] p-3 ${
+                className={`rounded-xl border border-sl-border bg-sl-surface p-3 ${
                   istVollbild ? 'flex min-h-0 flex-col gap-2' : 'space-y-2'
                 }`}
               >
                 <div className="flex shrink-0 items-center justify-between text-xs">
-                  <span className="font-semibold text-white">
+                  <span className="font-semibold text-sl-heading">
                     Master: {masterQuelle?.angleCode ?? 'SIDELINE'}
                   </span>
-                  <span className="font-mono text-[#8B949E] video-tabular">0 ms Basis</span>
+                  <span className="font-mono text-sl-muted video-tabular">0 ms Basis</span>
                 </div>
                 <div
                   className={`flex items-center justify-center overflow-hidden rounded-lg bg-[#07090C] font-mono text-xs text-[#8B949E] ${
@@ -651,7 +653,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
               {/* Sekundärer Viewport */}
               <div
-                className={`rounded-xl border border-[#232933] bg-[#13171D] p-3 ${
+                className={`rounded-xl border border-sl-border bg-sl-surface p-3 ${
                   istVollbild ? 'flex min-h-0 flex-col gap-2' : 'space-y-2'
                 }`}
               >
@@ -659,7 +661,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   <select
                     value={sekundaerWinkel}
                     onChange={(e) => setSekundaerWinkel(e.target.value)}
-                    className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-0.5 text-xs font-semibold text-white"
+                    className="rounded border border-sl-border bg-sl-canvas px-2 py-0.5 text-xs font-semibold text-sl-heading"
                   >
                     {aktivesReel.angles
                       .filter((a) => a !== (masterQuelle?.angleCode ?? 'SIDELINE'))
@@ -671,7 +673,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                         </option>
                       ))}
                   </select>
-                  <span className="font-mono text-[#F59E0B] video-tabular">
+                  <span className="font-mono text-sl-accent video-tabular">
                     Offset: {aktuellerOffset} ms
                   </span>
                 </div>
@@ -704,7 +706,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   ) : slaveQuelle ? (
                     <span>{slaveQuelle.fileName}</span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 text-amber-300">
+                    <span className="inline-flex items-center gap-1.5 text-[#FDE68A]">
                       <AlertTriangle className="h-4 w-4" aria-hidden="true" />
                       Fehlender Winkel (Lücke)
                     </span>
@@ -714,7 +716,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             </div>
 
             {/* Synchronisierte Kontrollleiste + Offset + Hotkeys (im Vollbild immer unten sichtbar) */}
-            <div className="shrink-0 overflow-hidden rounded-xl border border-[#232933] bg-[#13171D]">
+            <div className="shrink-0 overflow-hidden rounded-xl border border-sl-border bg-sl-surface">
               <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
                 <div className="flex items-center gap-1">
                   <button
@@ -724,7 +726,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       setSyncLaeuft(false);
                       springeSyncMs(syncPosMs - FRAME_MS);
                     }}
-                    className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                    className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
                   >
                     <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -732,7 +734,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     type="button"
                     title={`Play / Pause (${formatiereHotkeyAnzeige(hotkeys.playPause)})`}
                     onClick={() => setSyncLaeuft((v) => !v)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-sl-accent text-sl-accent-contrast hover:bg-sl-accent-hover"
                   >
                     {syncLaeuft ? (
                       <Pause className="h-4 w-4" aria-hidden="true" />
@@ -747,7 +749,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       setSyncLaeuft(false);
                       springeSyncMs(syncPosMs + FRAME_MS);
                     }}
-                    className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                    className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
                   >
                     <ChevronRight className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -762,16 +764,16 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     setSyncLaeuft(false);
                     springeSyncMs(Number(e.target.value));
                   }}
-                  className="h-1.5 flex-1 min-w-[140px] accent-[#F59E0B]"
+                  className="h-1.5 flex-1 min-w-[140px] accent-sl-accent"
                 />
-                <span className="font-mono text-xs text-[#8B949E] video-tabular">
+                <span className="font-mono text-xs text-sl-muted video-tabular">
                   {formatiereFrameTimecode(syncPosMs)}
                 </span>
                 <button
                   type="button"
                   onClick={toggleVollbild}
                   title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige(hotkeys.toggleFullscreen)})`}
-                  className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                  className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
                 >
                   {istVollbild ? (
                     <Minimize2 className="h-4 w-4" aria-hidden="true" />
@@ -782,8 +784,8 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </div>
 
               {slaveQuelle && (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#232933] px-4 py-2.5">
-                  <div className="text-xs text-[#8B949E]">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sl-border px-4 py-2.5">
+                  <div className="text-xs text-sl-muted">
                     Play #{aktivesPlay.playNumber} · Frame-Feinabgleich
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -792,7 +794,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                         key={delta}
                         type="button"
                         onClick={() => speichereOffset(aktuellerOffset + delta)}
-                        className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1 font-mono text-xs text-[#E6EDF3] hover:border-[#F59E0B] video-tabular"
+                        className="rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1 font-mono text-xs text-sl-primary hover:border-sl-accent video-tabular"
                       >
                         {delta > 0 ? `+${delta}` : delta} ms
                       </button>
@@ -800,7 +802,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     <button
                       type="button"
                       onClick={() => speichereOffset(0)}
-                      className="rounded-md bg-[#232933] px-3 py-1 text-xs font-medium text-white hover:bg-[#36404F]"
+                      className="rounded-md bg-sl-elevated px-3 py-1 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
                     >
                       Offset zurücksetzen (0)
                     </button>
@@ -808,7 +810,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 bg-[#0B0E11]/70 px-4 py-1.5 text-[11px] text-[#8B949E]">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sl-border/70 bg-sl-canvas/70 px-4 py-1.5 text-[11px] text-sl-muted">
                 {[
                   { key: hotkeys.playPause, label: 'Play/Pause' },
                   { key: hotkeys.stepBack, label: '-1 Frame' },
@@ -816,7 +818,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
                 ].map((item) => (
                   <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
-                    <kbd className="rounded border border-[#232933] bg-[#13171D] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                    <kbd className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
                       {formatiereHotkeyAnzeige(item.key)}
                     </kbd>
                     <span>{item.label}</span>
@@ -827,8 +829,8 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </div>
 
           {/* Play-Lücken- & Offset-Übersicht */}
-          <div className="rounded-xl border border-[#232933] bg-[#13171D] p-4 space-y-3 lg:col-span-4">
-            <h2 className="text-sm font-semibold text-white">Play-Abgleich &amp; Lücken</h2>
+          <div className="rounded-xl border border-sl-border bg-sl-surface p-4 space-y-3 lg:col-span-4">
+            <h2 className="text-sm font-semibold text-sl-heading">Play-Abgleich &amp; Lücken</h2>
             <div className="max-h-96 space-y-1.5 overflow-y-auto pr-1">
               {syncAnalyse.map((item) => (
                 <button
@@ -837,14 +839,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   onClick={() => setAktivesPlayId(item.playId)}
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                     item.playId === aktivesPlay.id
-                      ? 'border-[#F59E0B] bg-[#F59E0B]/10 text-white'
-                      : 'border-[#232933] bg-[#0B0E11] text-[#E6EDF3] hover:border-[#36404F]'
+                      ? 'border-sl-accent bg-sl-accent/10 text-sl-heading'
+                      : 'border-sl-border bg-sl-canvas text-sl-primary hover:border-sl-border-strong'
                   }`}
                 >
                   <span className="font-mono font-semibold video-tabular">
                     Play #{item.playNumber}
                   </span>
-                  <span className="text-[#8B949E]">
+                  <span className="text-sl-muted">
                     {item.fehlendeWinkel.length > 0
                       ? `Fehlt: ${item.fehlendeWinkel.join(', ')}`
                       : item.hatOffset
@@ -861,25 +863,25 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           ref={fastCutStageRef}
           className={
             istVollbild
-              ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-[#0B0E11] p-4'
-              : 'space-y-4 rounded-xl border border-[#232933] bg-[#13171D] p-5'
+              ? 'flex h-screen w-screen flex-col gap-3 overflow-hidden bg-sl-canvas p-4'
+              : 'space-y-4 rounded-xl border border-sl-border bg-sl-surface p-5'
           }
         >
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold text-white">
+                <h2 className="text-sm font-semibold text-sl-heading">
                   Ein-Punkt Fast-Cut-Timeline
                 </h2>
                 {cutStartMs > 0 && (
-                  <span className="rounded border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 font-mono text-[11px] text-[#F59E0B] video-tabular">
+                  <span className="rounded border border-sl-accent/40 bg-sl-accent/10 px-2 py-0.5 font-mono text-[11px] text-sl-accent video-tabular">
                     Restclip ab {formatiereFrameTimecode(cutStartMs)}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-[#8B949E]">
+              <p className="text-xs text-sl-muted">
                 Schnittbereich zählt automatisch ab{' '}
-                <span className="font-mono text-white">
+                <span className="font-mono text-sl-heading">
                   {cutStartMs === 0 ? 'Videobeginn' : formatiereFrameTimecode(cutStartMs)}
                 </span>{' '}
                 bis zur gesetzten Markierung.
@@ -893,7 +895,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   setTapeSpeed(0);
                   setFastCutWinkel(e.target.value);
                 }}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] px-2.5 py-1 text-xs text-white"
+                className="rounded-md border border-sl-border bg-sl-canvas px-2.5 py-1 text-xs text-sl-heading"
               >
                 {aktivesReel.angles.map((a) => (
                   <option key={a} value={a}>
@@ -901,14 +903,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   </option>
                 ))}
               </select>
-              <div className="font-mono text-sm text-[#F59E0B] video-tabular">
+              <div className="font-mono text-sm text-sl-accent video-tabular">
                 {formatiereFrameTimecode(restClip.relativMs)} / {formatiereFrameTimecode(restClip.dauerMs)} ({tapeSpeed}x)
               </div>
               <button
                 type="button"
                 onClick={toggleVollbild}
                 title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige(hotkeys.toggleFullscreen)})`}
-                className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+                className="rounded-md border border-sl-border bg-sl-canvas p-1.5 text-sl-primary hover:border-sl-accent"
               >
                 {istVollbild ? (
                   <Minimize2 className="h-4 w-4" aria-hidden="true" />
@@ -921,7 +923,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
           {/* Fast-Cut Video-Viewport */}
           <div
-            className={`flex items-center justify-center overflow-hidden rounded-lg border border-[#232933] bg-[#07090C] ${
+            className={`flex items-center justify-center overflow-hidden rounded-lg border border-sl-border bg-[#07090C] ${
               istVollbild ? 'flex-1 min-h-0 w-full' : 'aspect-video w-full'
             }`}
           >
@@ -957,7 +959,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </div>
 
           {/* Kontrollleiste + Schnitt-Markierung + Hotkeys (im Vollbild immer unten sichtbar) */}
-          <div className="shrink-0 space-y-3 rounded-xl border border-[#232933] bg-[#13171D] p-3">
+          <div className="shrink-0 space-y-3 rounded-xl border border-sl-border bg-sl-surface p-3">
             <input
               type="range"
               min={restClip.startMs}
@@ -968,7 +970,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 setTapeSpeed(0);
                 springeFastCutMs(Number(e.target.value));
               }}
-              className="w-full accent-[#F59E0B]"
+              className="w-full accent-sl-accent"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -976,7 +978,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <button
                   type="button"
                   onClick={() => setTapeSpeed((s) => (s <= -2 ? -4 : -2))}
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                  className="rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-heading hover:border-sl-accent"
                 >
                   {formatiereHotkeyAnzeige(hotkeys.fastCutReverse)} (-2x)
                 </button>
@@ -987,14 +989,14 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     springeFastCutMs(tapePosMs - FRAME_MS);
                   }}
                   title={`-1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepBack)})`}
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+                  className="rounded-md border border-sl-border bg-sl-canvas p-1.5 text-sl-primary hover:border-sl-accent"
                 >
                   <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setTapeSpeed(0)}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                  className="inline-flex items-center gap-1 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-heading hover:border-sl-accent"
                 >
                   <Pause className="h-3.5 w-3.5" aria-hidden="true" />{' '}
                   {formatiereHotkeyAnzeige(hotkeys.fastCutPause)}
@@ -1002,7 +1004,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <button
                   type="button"
                   onClick={() => setTapeSpeed(1)}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                  className="inline-flex items-center gap-1 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-heading hover:border-sl-accent"
                 >
                   <Play className="h-3.5 w-3.5" aria-hidden="true" />{' '}
                   {formatiereHotkeyAnzeige(hotkeys.fastCutForward)} (1x)
@@ -1010,7 +1012,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <button
                   type="button"
                   onClick={() => setTapeSpeed(2)}
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-white hover:border-[#F59E0B]"
+                  className="rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-heading hover:border-sl-accent"
                 >
                   {formatiereHotkeyAnzeige(hotkeys.fastCutForward)} (+2x)
                 </button>
@@ -1021,7 +1023,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     springeFastCutMs(tapePosMs + FRAME_MS);
                   }}
                   title={`+1 Frame (${formatiereHotkeyAnzeige(hotkeys.stepForward)})`}
-                  className="rounded-md border border-[#232933] bg-[#0B0E11] p-1.5 text-[#E6EDF3] hover:border-[#F59E0B]"
+                  className="rounded-md border border-sl-border bg-sl-canvas p-1.5 text-sl-primary hover:border-sl-accent"
                 >
                   <ChevronRight className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -1032,7 +1034,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   <button
                     type="button"
                     onClick={letztenSchnittRueckgaengig}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-[#232933] bg-[#0B0E11] px-3 py-1.5 text-xs text-[#E6EDF3] hover:border-[#F59E0B]"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs text-sl-primary hover:border-sl-accent"
                   >
                     <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
                     Letzten Schnitt rückgängig
@@ -1041,7 +1043,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <button
                   type="button"
                   onClick={setzeEinPunktSchnitt}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-[#F59E0B] px-4 py-1.5 text-xs font-semibold text-[#0B0E11] hover:bg-[#FBBF24] video-tabular"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-sl-accent px-4 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover video-tabular"
                 >
                   <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                   Schnitt setzen ({formatiereHotkeyAnzeige(hotkeys.markCut)}) · +{formatiereFrameTimecode(restClip.relativMs)}
@@ -1050,12 +1052,12 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             </div>
 
             {sessionCuts.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-[#232933]/70 pt-2 text-[11px]">
-                <span className="text-[#8B949E]">Geschnitten:</span>
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-sl-border/70 pt-2 text-[11px]">
+                <span className="text-sl-muted">Geschnitten:</span>
                 {sessionCuts.map((c) => (
                   <span
                     key={c.playId}
-                    className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-0.5 font-mono text-[#E6EDF3] video-tabular"
+                    className="rounded border border-sl-border bg-sl-canvas px-2 py-0.5 font-mono text-sl-primary video-tabular"
                   >
                     #{c.playNumber} ({formatiereFrameTimecode(c.startMs)}–{formatiereFrameTimecode(c.endMs)})
                   </span>
@@ -1063,7 +1065,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 pt-2 text-[11px] text-[#8B949E]">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sl-border/70 pt-2 text-[11px] text-sl-muted">
               {[
                 { key: hotkeys.fastCutReverse, label: 'Rückwärts' },
                 { key: hotkeys.fastCutPause, label: 'Pause' },
@@ -1074,7 +1076,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 { key: hotkeys.toggleFullscreen, label: 'Vollbild' },
               ].map((item) => (
                 <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
-                  <kbd className="rounded border border-[#232933] bg-[#0B0E11] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                  <kbd className="rounded border border-sl-border bg-sl-canvas px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
                     {formatiereHotkeyAnzeige(item.key)}
                   </kbd>
                   <span>{item.label}</span>

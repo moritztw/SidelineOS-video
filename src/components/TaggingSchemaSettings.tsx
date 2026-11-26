@@ -62,12 +62,12 @@ export function TaggingSchemaSettings({
     <div className="space-y-6">
       {/* Spalten aktivieren/deaktivieren */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-white">Aktive Breakdown-Felder</h3>
+        <h3 className="text-sm font-semibold text-sl-heading">Aktive Breakdown-Felder</h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
           {schema.fields.map((feld) => (
             <label
               key={feld.key}
-              className="flex items-center justify-between gap-2 rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs text-[#E6EDF3]"
+              className="flex items-center justify-between gap-2 rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-xs text-sl-primary"
             >
               <span className="truncate font-mono">{feld.label}</span>
               <input
@@ -75,7 +75,7 @@ export function TaggingSchemaSettings({
                 checked={feld.aktiv}
                 disabled={!istTeamAdmin}
                 onChange={() => handleToggleFeld(feld.key)}
-                className="accent-[#F59E0B]"
+                className="accent-sl-accent"
               />
             </label>
           ))}
@@ -84,20 +84,20 @@ export function TaggingSchemaSettings({
 
       {/* Custom-Felder anlegen */}
       {istTeamAdmin && (
-        <div className="space-y-2 rounded-lg border border-[#232933] bg-[#0B0E11] p-4">
-          <h3 className="text-xs font-semibold text-white">Eigenes Custom-Feld anlegen</h3>
+        <div className="space-y-2 rounded-lg border border-sl-border bg-sl-canvas p-4">
+          <h3 className="text-xs font-semibold text-sl-heading">Eigenes Custom-Feld anlegen</h3>
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
               value={customLabel}
               onChange={(e) => setCustomLabel(e.target.value)}
               placeholder="z. B. HASH, TEMPO, COVERAGE"
-              className="flex-1 min-w-[180px] rounded-md border border-[#232933] bg-[#13171D] px-3 py-1.5 text-xs text-white"
+              className="flex-1 min-w-[180px] rounded-md border border-sl-border bg-sl-surface px-3 py-1.5 text-xs text-sl-heading"
             />
             <select
               value={customTyp}
               onChange={(e) => setCustomTyp(e.target.value as 'text' | 'number')}
-              className="rounded-md border border-[#232933] bg-[#13171D] px-2.5 py-1.5 text-xs text-white"
+              className="rounded-md border border-sl-border bg-sl-surface px-2.5 py-1.5 text-xs text-sl-heading"
             >
               <option value="text">Text</option>
               <option value="number">Zahl</option>
@@ -105,7 +105,7 @@ export function TaggingSchemaSettings({
             <button
               type="button"
               onClick={handleCustomHinzufuegen}
-              className="inline-flex items-center gap-1 rounded-md bg-[#F59E0B] px-3 py-1.5 text-xs font-semibold text-[#0B0E11]"
+              className="inline-flex items-center gap-1 rounded-md bg-sl-accent px-3 py-1.5 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               Hinzufügen
@@ -117,25 +117,25 @@ export function TaggingSchemaSettings({
       {/* Lernendes Team-Wörterbuch (Löschen nur durch TEAM_ADMIN) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Lernendes Team-Wörterbuch</h3>
+          <h3 className="text-sm font-semibold text-sl-heading">Lernendes Team-Wörterbuch</h3>
           {!istTeamAdmin && (
-            <span className="text-xs text-[#8B949E]">Löschen nur durch Team Admin</span>
+            <span className="text-xs text-sl-muted">Löschen nur durch Team Admin</span>
           )}
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {Object.entries(schema.dictionary).map(([feldKey, werte]) => (
             <div
               key={feldKey}
-              className="rounded-lg border border-[#232933] bg-[#0B0E11] p-3 space-y-2"
+              className="rounded-lg border border-sl-border bg-sl-canvas p-3 space-y-2"
             >
-              <div className="font-mono text-xs font-semibold text-[#F59E0B]">
+              <div className="font-mono text-xs font-semibold text-sl-accent">
                 {feldKey.toUpperCase()}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {werte.map((wert) => (
                   <span
                     key={wert}
-                    className="inline-flex items-center gap-1 rounded border border-[#232933] bg-[#13171D] px-2 py-0.5 text-xs text-[#E6EDF3]"
+                    className="inline-flex items-center gap-1 rounded border border-sl-border bg-sl-surface px-2 py-0.5 text-xs text-sl-primary"
                   >
                     {wert}
                     {istTeamAdmin && (
@@ -143,7 +143,7 @@ export function TaggingSchemaSettings({
                         type="button"
                         onClick={() => handleWortLoeschen(feldKey, wert)}
                         title={`"${wert}" entfernen`}
-                        className="text-[#6E7681] hover:text-red-300"
+                        className="text-sl-subtle hover:text-sl-danger-text"
                       >
                         <Trash2 className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -156,7 +156,7 @@ export function TaggingSchemaSettings({
         </div>
       </div>
 
-      {fehler && <p className="text-xs text-red-300">{fehler}</p>}
+      {fehler && <p className="text-xs text-sl-danger-text">{fehler}</p>}
     </div>
   );
 }

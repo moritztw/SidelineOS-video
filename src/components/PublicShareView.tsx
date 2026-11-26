@@ -41,7 +41,7 @@ export function PublicShareView({
 
   if (laedt) {
     return (
-      <div className="mx-auto max-w-4xl rounded-xl border border-[#232933] bg-[#13171D] p-8 text-center text-sm text-[#8B949E]">
+      <div className="mx-auto max-w-4xl rounded-xl border border-sl-border bg-sl-surface p-8 text-center text-sm text-sl-muted">
         Lade Freigabe-Ansicht...
       </div>
     );
@@ -49,18 +49,18 @@ export function PublicShareView({
 
   if (status === 410 || status === 404 || !daten) {
     return (
-      <div className="mx-auto max-w-xl rounded-xl border border-[#232933] bg-[#13171D] p-8 text-center space-y-4">
-        <Film className="mx-auto h-8 w-8 text-[#6E7681]" aria-hidden="true" />
-        <h1 className="text-lg font-bold text-white">
+      <div className="mx-auto max-w-xl rounded-xl border border-sl-border bg-sl-surface p-8 text-center space-y-4">
+        <Film className="mx-auto h-8 w-8 text-sl-subtle" aria-hidden="true" />
+        <h1 className="text-lg font-bold text-sl-heading">
           {status === 410 ? '410 — Link abgelaufen' : '404 — Nicht gefunden'}
         </h1>
-        <p className="text-sm text-[#8B949E]">
+        <p className="text-sm text-sl-muted">
           {status === 410 ? t('publicShareExpired') : t('publicShareNotFound')}
         </p>
         <button
           type="button"
           onClick={onSchliessen}
-          className="inline-flex items-center gap-2 rounded-lg border border-[#232933] px-4 py-2 text-xs text-white hover:bg-[#232933]"
+          className="inline-flex items-center gap-2 rounded-lg border border-sl-border px-4 py-2 text-xs text-sl-heading hover:bg-sl-elevated"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Zurück
@@ -107,11 +107,11 @@ export function PublicShareView({
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#232933] bg-[#13171D] p-5">
+      <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-sl-border bg-sl-surface p-5">
         <div className="space-y-1">
-          <div className="text-xs text-[#F59E0B]">{t('publicShareTitle')}</div>
-          <h1 className="text-xl font-bold text-white">{daten.reel.title}</h1>
-          <div className="text-xs text-[#8B949E] video-tabular">
+          <div className="text-xs text-sl-accent">{t('publicShareTitle')}</div>
+          <h1 className="text-xl font-bold text-sl-heading">{daten.reel.title}</h1>
+          <div className="text-xs text-sl-muted video-tabular">
             {daten.reel.eventDate} · {daten.plays.length} Spielzüge · Gültig bis{' '}
             {daten.expiresAt.slice(0, 10)}
           </div>
@@ -120,7 +120,7 @@ export function PublicShareView({
           <button
             type="button"
             onClick={ladeJsonHerunter}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs text-white hover:border-[#F59E0B]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-xs text-sl-heading hover:border-sl-accent"
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
             JSON
@@ -128,7 +128,7 @@ export function PublicShareView({
           <button
             type="button"
             onClick={ladeCsvHerunter}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#232933] bg-[#0B0E11] px-3 py-2 text-xs text-white hover:border-[#F59E0B]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-xs text-sl-heading hover:border-sl-accent"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
             CSV
@@ -136,7 +136,7 @@ export function PublicShareView({
           <button
             type="button"
             onClick={onSchliessen}
-            className="rounded-lg bg-[#232933] px-3 py-2 text-xs font-medium text-white hover:bg-[#36404F]"
+            className="rounded-lg bg-sl-elevated px-3 py-2 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
           >
             Schließen
           </button>
@@ -144,9 +144,9 @@ export function PublicShareView({
       </header>
 
       {/* Multi-Angle-Vorschau (ohne Coach-Notizen oder Telestrationen) */}
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-4 space-y-3">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-white video-tabular">
+          <span className="text-xs font-semibold text-sl-heading video-tabular">
             Play #{aktivesPlay?.playNumber ?? 1} · {aktiverWinkel}
           </span>
           <div className="flex items-center gap-1">
@@ -157,8 +157,8 @@ export function PublicShareView({
                 onClick={() => setAktiverWinkel(a)}
                 className={`rounded px-2.5 py-1 text-xs ${
                   aktiverWinkel === a
-                    ? 'bg-[#F59E0B] font-semibold text-[#0B0E11]'
-                    : 'bg-[#0B0E11] text-[#8B949E]'
+                    ? 'bg-sl-accent font-semibold text-sl-accent-contrast'
+                    : 'bg-sl-canvas text-sl-muted'
                 }`}
               >
                 {a}
@@ -176,10 +176,10 @@ export function PublicShareView({
       </div>
 
       {/* Ausschließlich freigegebene Breakdown-Spalten */}
-      <div className="overflow-x-auto rounded-xl border border-[#232933] bg-[#13171D]">
+      <div className="overflow-x-auto rounded-xl border border-sl-border bg-sl-surface">
         <table className="w-full border-collapse text-left text-xs">
           <thead>
-            <tr className="border-b border-[#232933] bg-[#0B0E11] font-mono text-[11px] text-[#8B949E]">
+            <tr className="border-b border-sl-border bg-sl-canvas font-mono text-[11px] text-sl-muted">
               <th className="px-3 py-2.5">PLAY #</th>
               {daten.allowedFields.map((f) => (
                 <th key={f} className="whitespace-nowrap px-3 py-2.5 uppercase">
@@ -193,8 +193,8 @@ export function PublicShareView({
               <tr
                 key={p.id}
                 onClick={() => setAktivesPlayIdx(idx)}
-                className={`cursor-pointer border-b border-[#232933]/60 ${
-                  idx === aktivesPlayIdx ? 'bg-[#F59E0B]/10 text-white' : 'text-[#E6EDF3]'
+                className={`cursor-pointer border-b border-sl-border/60 ${
+                  idx === aktivesPlayIdx ? 'bg-sl-accent/10 text-sl-heading' : 'text-sl-primary'
                 }`}
               >
                 <td className="px-3 py-2 font-mono video-tabular">{p.playNumber}</td>

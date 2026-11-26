@@ -2,7 +2,7 @@
   "id": "video-analysis",
   "name": "Videoanalyse",
   "kurzbeschreibung": "Film Room, 25-fps-Telestration, Hudl-Breakdown, Sync-Editor, Smart Playlists und Team-/Public-Sharing.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "sdkVersion": "1.0",
   "minCoreVersion": "0.1.0-alpha.1",
   "autor": "moritztw",

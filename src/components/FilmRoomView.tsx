@@ -377,7 +377,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   if (!aktivesReel || !aktivesPlay) {
     return (
-      <div className="rounded-xl border border-[#232933] bg-[#13171D] p-10 text-center text-sm text-[#8B949E]">
+      <div className="rounded-xl border border-sl-border bg-sl-surface p-10 text-center text-sm text-sl-muted">
         {t('filmRoomEmpty')}
       </div>
     );
@@ -469,8 +469,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       {/* Kopfzeile: Reel-Info, Winkel-Umschalter & Playlist-Hinweis */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
-          <h1 className="text-lg font-bold text-white">{aktivesReel.title}</h1>
-          <div className="flex items-center gap-2 text-xs text-[#8B949E] video-tabular">
+          <h1 className="text-lg font-bold text-sl-heading">{aktivesReel.title}</h1>
+          <div className="flex items-center gap-2 text-xs text-sl-muted video-tabular">
             <span>Play #{aktivesPlay.playNumber}</span>
             <span aria-hidden="true">·</span>
             <span>Frame {aktuellerFrame}</span>
@@ -484,12 +484,12 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             <button
               type="button"
               onClick={() => setAktiverPlaylistFilterIds(null)}
-              className="rounded-md border border-[#F59E0B]/50 px-3 py-1.5 text-xs text-[#F59E0B] hover:bg-[#F59E0B]/10"
+              className="rounded-md border border-sl-accent/50 px-3 py-1.5 text-xs text-sl-accent hover:bg-sl-accent/10"
             >
               Playlist-Filter aufheben ({sichtbarePlays.length})
             </button>
           )}
-          <div className="flex items-center gap-1 rounded-lg border border-[#232933] bg-[#13171D] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-sl-border bg-sl-surface p-1">
             {aktivesReel.angles.map((angle) => {
               const verfuegbar = Boolean(aktivesPlay.sources[angle]);
               return (
@@ -500,10 +500,10 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   onClick={() => handleWinkelWechsel(angle)}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap ${
                     aktiverWinkel === angle
-                      ? 'bg-[#F59E0B] text-[#0B0E11]'
+                      ? 'bg-sl-accent text-sl-accent-contrast'
                       : verfuegbar
-                        ? 'text-[#E6EDF3] hover:bg-[#232933]'
-                        : 'cursor-not-allowed text-[#6E7681] opacity-40'
+                        ? 'text-sl-primary hover:bg-sl-elevated'
+                        : 'cursor-not-allowed text-sl-subtle opacity-40'
                   }`}
                 >
                   {angle}
@@ -519,20 +519,20 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         ref={stageRef}
         className={
           istVollbild
-            ? 'flex h-screen w-screen flex-col overflow-hidden bg-[#0B0E11]'
-            : 'overflow-hidden rounded-xl border border-[#232933] bg-[#0B0E11]'
+            ? 'flex h-screen w-screen flex-col overflow-hidden bg-sl-canvas'
+            : 'overflow-hidden rounded-xl border border-sl-border bg-sl-canvas'
         }
       >
         {istVollbild && (
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#232933] bg-[#13171D] px-4 py-2 text-xs">
-            <div className="flex items-center gap-2 text-[#E6EDF3] video-tabular">
-              <span className="font-semibold text-white">{aktivesReel.title}</span>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-sl-border bg-sl-surface px-4 py-2 text-xs">
+            <div className="flex items-center gap-2 text-sl-primary video-tabular">
+              <span className="font-semibold text-sl-heading">{aktivesReel.title}</span>
               <span aria-hidden="true">·</span>
               <span>Play #{aktivesPlay.playNumber}</span>
               <span aria-hidden="true">·</span>
               <span>Frame {aktuellerFrame}</span>
               <span aria-hidden="true">·</span>
-              <span className="font-mono text-[#F59E0B]">{formatiereFrameTimecode(aktuelleMs)}</span>
+              <span className="font-mono text-sl-accent">{formatiereFrameTimecode(aktuelleMs)}</span>
             </div>
             <div className="flex items-center gap-1">
               {aktivesReel.angles.map((angle) => {
@@ -545,10 +545,10 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     onClick={() => handleWinkelWechsel(angle)}
                     className={`rounded px-2.5 py-1 text-xs font-medium ${
                       aktiverWinkel === angle
-                        ? 'bg-[#F59E0B] text-[#0B0E11]'
+                        ? 'bg-sl-accent text-sl-accent-contrast'
                         : verfuegbar
-                          ? 'text-[#E6EDF3] hover:bg-[#232933]'
-                          : 'cursor-not-allowed text-[#6E7681] opacity-40'
+                          ? 'text-sl-primary hover:bg-sl-elevated'
+                          : 'cursor-not-allowed text-sl-subtle opacity-40'
                     }`}
                   >
                     {angle}
@@ -636,10 +636,10 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           {frameNotizen.map((notiz) => (
             <div
               key={notiz.id}
-              className={`absolute z-20 w-72 rounded-lg border border-[#232933] bg-[#0B0E11]/90 p-3 backdrop-blur-sm ${ECKEN_KLASSEN[notiz.cornerPosition]}`}
+              className={`absolute z-20 w-72 rounded-lg border border-sl-border bg-sl-canvas/90 p-3 backdrop-blur-sm ${ECKEN_KLASSEN[notiz.cornerPosition]}`}
             >
-              <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[#8B949E]">
-                <span className="truncate font-medium text-[#F59E0B]">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-sl-muted">
+                <span className="truncate font-medium text-sl-accent">
                   {notiz.authorName} · {notiz.status === 'DRAFT' ? 'Entwurf' : 'Veröffentlicht'}
                 </span>
                 {istCoachOderAdmin && (
@@ -650,7 +650,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       onChange={(e) =>
                         handleNotizUpdate(notiz, { cornerPosition: e.target.value as EckPosition })
                       }
-                      className="rounded border border-[#232933] bg-[#13171D] px-1 py-0.5 text-[10px] text-[#E6EDF3]"
+                      className="rounded border border-sl-border bg-sl-surface px-1 py-0.5 text-[10px] text-sl-primary"
                     >
                       <option value="top-left">Oben L</option>
                       <option value="top-right">Oben R</option>
@@ -661,7 +661,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       type="button"
                       title="Notiz löschen"
                       onClick={() => handleNotizLoeschen(notiz.id)}
-                      className="rounded p-0.5 text-[#8B949E] hover:text-red-300"
+                      className="rounded p-0.5 text-sl-muted hover:text-sl-danger-text"
                     >
                       <Trash2 className="h-3 w-3" aria-hidden="true" />
                     </button>
@@ -679,7 +679,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                         alt.map((n) => (n.id === notiz.id ? { ...n, text: e.target.value } : n))
                       )
                     }
-                    className="w-full rounded border border-[#F59E0B] bg-[#13171D] p-1.5 text-xs text-white focus:outline-none"
+                    className="w-full rounded border border-sl-accent bg-sl-surface p-1.5 text-xs text-sl-heading focus:outline-none"
                   />
                   <div className="flex items-center justify-between">
                     <select
@@ -687,7 +687,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       onChange={(e) =>
                         handleNotizUpdate(notiz, { status: e.target.value as NotizStatus })
                       }
-                      className="rounded border border-[#232933] bg-[#13171D] px-1.5 py-0.5 text-[11px] text-[#E6EDF3]"
+                      className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 text-[11px] text-sl-primary"
                     >
                       <option value="DRAFT">Entwurf</option>
                       <option value="PUBLISHED">Veröffentlicht</option>
@@ -698,7 +698,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                         await handleNotizUpdate(notiz, { text: notiz.text });
                         setEditNotizId(null);
                       }}
-                      className="rounded bg-[#F59E0B] px-2 py-0.5 text-[11px] font-semibold text-[#0B0E11]"
+                      className="rounded bg-sl-accent px-2 py-0.5 text-[11px] font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover"
                     >
                       Fertig
                     </button>
@@ -707,7 +707,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               ) : (
                 <p
                   onClick={() => istCoachOderAdmin && setEditNotizId(notiz.id)}
-                  className={`text-xs leading-relaxed text-[#E6EDF3] ${
+                  className={`text-xs leading-relaxed text-sl-primary ${
                     istCoachOderAdmin ? 'cursor-text' : ''
                   }`}
                 >
@@ -719,7 +719,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
           {/* Eingeblendete Zeichenleiste am unteren Videorand (auch im Vollbild) */}
           {istCoachOderAdmin && zeichenBarSichtbar && (
-            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-[#232933] bg-[#0B0E11]/90 px-2 py-1.5 backdrop-blur-sm">
+            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-sl-border bg-sl-canvas/90 px-2 py-1.5 backdrop-blur-sm">
               {(
                 [
                   { id: 'select', icon: MousePointer, title: 'Auswählen / Verschieben' },
@@ -739,8 +739,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     onClick={() => setWerkzeug(tool.id)}
                     className={`rounded-md p-1.5 transition-colors ${
                       werkzeug === tool.id
-                        ? 'bg-[#F59E0B] text-[#0B0E11]'
-                        : 'text-[#E6EDF3] hover:bg-[#232933]'
+                        ? 'bg-sl-accent text-sl-accent-contrast'
+                        : 'text-sl-primary hover:bg-sl-elevated'
                     }`}
                   >
                     <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -748,7 +748,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 );
               })}
 
-              <span className="mx-1 h-4 w-px bg-[#232933]" aria-hidden="true" />
+              <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
 
               {FARBEN.map((c) => (
                 <button
@@ -757,13 +757,13 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   aria-label={`Farbe ${c}`}
                   onClick={() => setFarbe(c)}
                   className={`h-4 w-4 rounded-full border ${
-                    farbe === c ? 'border-white scale-110' : 'border-[#232933]'
+                    farbe === c ? 'border-sl-heading scale-110' : 'border-sl-border'
                   }`}
                   style={{ backgroundColor: c }}
                 />
               ))}
 
-              <span className="mx-1 h-4 w-px bg-[#232933]" aria-hidden="true" />
+              <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
 
               <button
                 type="button"
@@ -772,7 +772,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   const aktuell = frameTelestration?.elements ?? [];
                   if (aktuell.length > 0) speichereZeichnung(aktuell.slice(0, -1));
                 }}
-                className="rounded-md p-1.5 text-[#8B949E] hover:bg-[#232933] hover:text-white"
+                className="rounded-md p-1.5 text-sl-muted hover:bg-sl-elevated hover:text-sl-heading"
               >
                 <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -780,7 +780,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 type="button"
                 title="Frame-Zeichnungen leeren"
                 onClick={() => speichereZeichnung([])}
-                className="rounded-md p-1.5 text-[#8B949E] hover:bg-red-950/50 hover:text-red-300"
+                className="rounded-md p-1.5 text-sl-muted hover:bg-sl-danger/15 hover:text-sl-danger-text"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -790,7 +790,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         </div>
 
         {/* Transportleiste & Hotkey-Leiste (auch im Vollbild immer sichtbar) */}
-        <div className="shrink-0 border-t border-[#232933] bg-[#13171D]">
+        <div className="shrink-0 border-t border-sl-border bg-sl-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
             <div className="flex items-center gap-1.5">
               <button
@@ -800,7 +800,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   const idx = sichtbarePlays.findIndex((p) => p.id === aktivesPlay.id);
                   if (idx > 0) handlePlayWechsel(sichtbarePlays[idx - 1].id);
                 }}
-                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 <SkipBack className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -811,7 +811,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   setLaeuft(false);
                   springeZuMs(aktuelleMs - FRAME_MS);
                 }}
-                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -819,7 +819,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 type="button"
                 title={`Wiedergabe / Pause (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause)})`}
                 onClick={() => setLaeuft((v) => !v)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#F59E0B] text-[#0B0E11] hover:bg-[#FBBF24]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-sl-accent text-sl-accent-contrast hover:bg-sl-accent-hover"
               >
                 {laeuft ? (
                   <Pause className="h-4 w-4" aria-hidden="true" />
@@ -834,7 +834,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                   setLaeuft(false);
                   springeZuMs(aktuelleMs + FRAME_MS);
                 }}
-                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -847,7 +847,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                     handlePlayWechsel(sichtbarePlays[idx + 1].id);
                   }
                 }}
-                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 <SkipForward className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -863,7 +863,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 setLaeuft(false);
                 springeZuMs(Number(e.target.value));
               }}
-              className="h-1.5 flex-1 min-w-[160px] accent-[#F59E0B]"
+              className="h-1.5 flex-1 min-w-[160px] accent-sl-accent"
             />
 
             <div className="flex items-center gap-2 text-xs">
@@ -871,7 +871,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 aria-label="Wiedergabetempo"
                 value={tempo}
                 onChange={(e) => setTempo(Number(e.target.value))}
-                className="rounded border border-[#232933] bg-[#0B0E11] px-2 py-1 text-xs text-[#E6EDF3] video-tabular"
+                className="rounded border border-sl-border bg-sl-canvas px-2 py-1 text-xs text-sl-primary video-tabular"
               >
                 <option value={0.25}>0.25x</option>
                 <option value={0.5}>0.5x</option>
@@ -879,12 +879,12 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <option value={1.5}>1.5x</option>
                 <option value={2}>2.0x</option>
               </select>
-              <label className="inline-flex items-center gap-1.5 text-[#E6EDF3] whitespace-nowrap">
+              <label className="inline-flex items-center gap-1.5 text-sl-primary whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={autoStop}
                   onChange={(e) => setAutoStop(e.target.checked)}
-                  className="accent-[#F59E0B]"
+                  className="accent-sl-accent"
                 />
                 {t('autoStop')}
               </label>
@@ -892,7 +892,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 type="button"
                 onClick={toggleVollbild}
                 title={`${istVollbild ? t('exitFullscreen') : t('fullscreen')} (${formatiereHotkeyAnzeige((userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen)})`}
-                className="rounded-md p-1.5 text-[#E6EDF3] hover:bg-[#232933]"
+                className="rounded-md p-1.5 text-sl-primary hover:bg-sl-elevated"
               >
                 {istVollbild ? (
                   <Minimize2 className="h-4 w-4" aria-hidden="true" />
@@ -904,7 +904,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           </div>
 
           {/* Hotkey-Leiste (immer sichtbar für schnelle Tastaturbedienung, besonders im Vollbild) */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#232933]/70 bg-[#0B0E11]/70 px-4 py-1.5 text-[11px] text-[#8B949E]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sl-border/70 bg-sl-canvas/70 px-4 py-1.5 text-[11px] text-sl-muted">
             {[
               { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).playPause, label: 'Play/Pause' },
               { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).stepBack, label: '-1 Frame' },
@@ -917,7 +917,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               { key: (userPrefs?.hotkeys ?? STANDARD_HOTKEYS).toggleFullscreen, label: 'Vollbild' },
             ].map((item) => (
               <span key={item.label} className="inline-flex items-center gap-1 whitespace-nowrap">
-                <kbd className="rounded border border-[#232933] bg-[#13171D] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                <kbd className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 font-mono text-[10px] text-sl-heading">
                   {formatiereHotkeyAnzeige(item.key)}
                 </kbd>
                 <span>{item.label}</span>
@@ -929,20 +929,20 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
       {/* Schnelle Coach-Notiz am aktuellen Frame */}
       {istCoachOderAdmin && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#232933] bg-[#13171D] p-3">
-          <MessageSquarePlus className="h-4 w-4 text-[#F59E0B]" aria-hidden="true" />
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sl-border bg-sl-surface p-3">
+          <MessageSquarePlus className="h-4 w-4 text-sl-accent" aria-hidden="true" />
           <input
             type="text"
             value={notizEntwurfText}
             onChange={(e) => setNotizEntwurfText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleNotizAnlegen()}
             placeholder={`Coach-Notiz exakt an Frame ${aktuellerFrame} (${formatiereFrameTimecode(aktuelleMs)}) heften...`}
-            className="flex-1 min-w-[220px] bg-transparent text-xs text-white placeholder:text-[#6E7681] focus:outline-none"
+            className="flex-1 min-w-[220px] bg-transparent text-xs text-sl-heading placeholder:text-sl-subtle focus:outline-none"
           />
           <button
             type="button"
             onClick={handleNotizAnlegen}
-            className="rounded-md bg-[#232933] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#36404F] whitespace-nowrap shrink-0"
+            className="rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong whitespace-nowrap shrink-0"
           >
             Notiz anheften
           </button>

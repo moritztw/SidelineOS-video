@@ -1,15 +1,33 @@
 @import "tailwindcss/theme.css";
 
-@theme {
+@theme inline {
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-sl-canvas: var(--sl-bg-canvas);
+  --color-sl-topbar: var(--sl-bg-topbar);
+  --color-sl-surface: var(--sl-bg-surface);
+  --color-sl-elevated: var(--sl-bg-elevated);
+  --color-sl-border: var(--sl-border);
+  --color-sl-border-strong: var(--sl-border-strong);
+  --color-sl-heading: var(--sl-text-heading);
+  --color-sl-primary: var(--sl-text-primary);
+  --color-sl-muted: var(--sl-text-muted);
+  --color-sl-subtle: var(--sl-text-subtle);
+  --color-sl-accent: var(--sl-accent);
+  --color-sl-accent-hover: var(--sl-accent-hover);
+  --color-sl-accent-contrast: var(--sl-accent-contrast);
+  --color-sl-danger: var(--sl-danger);
+  --color-sl-danger-text: var(--sl-danger-text);
+  --color-sl-success: var(--sl-success);
+  --color-sl-success-text: var(--sl-success-text);
+  --color-sl-warning-text: var(--sl-warning-text);
 }
 
 .sideline-video-root {
   @import "tailwindcss/utilities.css";
   font-family: var(--font-sans);
-  color: #e6edf3;
+  color: var(--sl-text-primary);
 }
 
 .sideline-video-root .video-tabular {
