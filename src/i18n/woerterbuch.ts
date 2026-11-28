@@ -1,4 +1,7 @@
-import type { SprachWoerterbuecher } from '@sidelineos/plugin-sdk';
+import type { UnterstuetzteSprache } from '@sidelineos/plugin-sdk';
+
+export type SprachPaket = Record<string, string>;
+export type SprachWoerterbuecher = Record<UnterstuetzteSprache, SprachPaket>;
 
 export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
   de: {
@@ -6,11 +9,13 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     tabFilmRoom: 'Film Room',
     tabSyncCut: 'Sync & Cut',
     tabPlaylists: 'Smart Playlists',
+    tabClubLibrary: 'Vereins-Mediathek',
     importAction: 'Video importieren',
     libraryTitle: 'Videobibliothek',
-    librarySubtitle: 'Saisonbezogene Spiel- und Trainingsaufnahmen mit teaminterner Freigabe.',
+    librarySubtitle: 'Saisonbezogene Spiel- und Trainingsaufnahmen mit vereins- und teamweiter Freigabe.',
     searchPlaceholder: 'Titel, Gegner oder Datum suchen...',
     allCategories: 'Alle',
+    allSeasons: 'Alle Saisons',
     catGame: 'Spiel',
     catPractice: 'Training',
     catScouting: 'Scouting',
@@ -18,14 +23,23 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     catCustom: 'Sonstiges',
     emptyLibraryTitle: 'Noch keine Videos in dieser Saison',
     emptyLibraryBody: 'Lade Einzelclips, eine Gesamtdatei oder ein sideline-bundle.json hoch.',
-    visCoachesOnly: 'Nur Coaches',
-    visAllPlayers: 'Alle Spieler',
-    visUnitOffense: 'Unit: Offense',
-    visUnitDefense: 'Unit: Defense',
-    visUnitSpecial: 'Unit: Special Teams',
+    visStaffOnly: 'Nur Staff & Admins',
+    visAllMembers: 'Alle Mitglieder',
+    visCoachesOnly: 'Nur Staff & Admins',
+    visAllPlayers: 'Alle Mitglieder',
+    shareScopePrivate: 'Nur Uploader & Admins',
+    shareScopeTeam: 'Nur Team',
+    shareScopeClub: 'Vereinsweit',
+    shareScopeSelected: 'Team-Sharing',
+    accessModeReadOnly: 'Nur Lesen',
+    accessModeOwnBreakdown: 'Eigenes Breakdown',
+    accessModeOwner: 'Eigentümer',
+    readOnlyBanner: 'Dieses Team ist archiviert (Nur-Lese-Modus). Wiedergabe und Downloads sind verfügbar, Änderungen sind gesperrt.',
+    quotaExceededError: 'Speicherlimit des Vereins erreicht (HTTP 413). Bitte Speicher freigeben oder Kontingent erhöhen.',
+    archivedTeamError: 'Dieses Team ist archiviert (HTTP 409). Änderungen sind nicht möglich.',
     openFilmRoom: 'Film Room öffnen',
     openSyncCut: 'Sync & Cut',
-    shareReel: 'Teilen',
+    shareReel: 'Freigeben',
     exportBundle: 'Bundle JSON',
     deleteReel: 'Entfernen',
     playsSuffix: 'Spielzüge',
@@ -33,6 +47,8 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     uploadModeClips: 'Einzelclips',
     uploadModeSlice: 'Einzeldatei (Time-Slice)',
     uploadModeBundle: 'sideline-bundle.json',
+    hudlCsvImportTitle: 'Hudl CSV-Metadaten importieren',
+    hudlCsvAttachHint: 'Optional: Hudl CSV-Export (.csv) beifügen, um Breakdown-Daten direkt zuzuordnen.',
     filmRoomEmpty: 'Wähle ein Reel aus der Videobibliothek, um den Film Room zu öffnen.',
     autoStop: 'Auto-Stop',
     fullscreen: 'Vollbild',
@@ -41,27 +57,31 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     addPlay: 'Spielzug hinzufügen',
     syncTitle: 'Multi-Angle Sync & Fast-Cut',
     playlistsTitle: 'Smart Playlists & Cutups',
-    shareModalTitle: 'Team- & Link-Freigabe',
+    shareModalTitle: 'Sichtbarkeit, Team- & Link-Freigabe',
+    clubLibraryTitle: 'Vereins-Mediathek',
+    clubLibrarySubtitle: 'Alle Videos im Verein zentral verwalten, vereinsweit oder an Unterteams freigeben (Zero-Copy).',
     publicShareTitle: 'Geteilter Video-Breakdown',
     publicShareExpired: 'Dieser Freigabe-Link ist abgelaufen oder wurde widerrufen.',
     publicShareNotFound: 'Freigabe-Link nicht gefunden.',
     settingsUserTitle: 'Video-Wiedergabe & Hotkeys',
-    settingsTeamTitle: 'Tagging-Schema & Lernendes Wörterbuch',
-    settingsSysadminTitle: 'Video S3-Ablage & Schonfrist',
-    editReel: 'Reel & Angles bearbeiten',
+    settingsTeamTitle: 'Schema, Gruppen-Farben & Saisons',
+    settingsSysadminTitle: 'Video-Speicher & Kontingent',
+    editReel: 'Reel, Angles & CSV',
     breakdownOverlayTitle: 'Breakdown-Overlay',
-    annotationSharingTitle: 'Anmerkungs-Freigaben & Farbcodes',
+    annotationSharingTitle: 'Zielgruppen-Farbcodes (userGroups)',
   },
   en: {
     tabLibrary: 'Video Library',
     tabFilmRoom: 'Film Room',
     tabSyncCut: 'Sync & Cut',
     tabPlaylists: 'Smart Playlists',
+    tabClubLibrary: 'Club Library',
     importAction: 'Import Video',
     libraryTitle: 'Video Library',
-    librarySubtitle: 'Season-scoped game and practice footage with granular team visibility.',
+    librarySubtitle: 'Season-scoped game and practice footage with club-wide and team sharing.',
     searchPlaceholder: 'Search title, opponent, or date...',
     allCategories: 'All',
+    allSeasons: 'All Seasons',
     catGame: 'Game',
     catPractice: 'Practice',
     catScouting: 'Scouting',
@@ -69,11 +89,20 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     catCustom: 'Custom',
     emptyLibraryTitle: 'No videos in this season yet',
     emptyLibraryBody: 'Import individual clips, a single tape, or a sideline-bundle.json file.',
-    visCoachesOnly: 'Coaches Only',
-    visAllPlayers: 'All Players',
-    visUnitOffense: 'Unit: Offense',
-    visUnitDefense: 'Unit: Defense',
-    visUnitSpecial: 'Unit: Special Teams',
+    visStaffOnly: 'Staff & Admins Only',
+    visAllMembers: 'All Members',
+    visCoachesOnly: 'Staff & Admins Only',
+    visAllPlayers: 'All Members',
+    shareScopePrivate: 'Uploader & Admins Only',
+    shareScopeTeam: 'Team Only',
+    shareScopeClub: 'Club-wide',
+    shareScopeSelected: 'Team Sharing',
+    accessModeReadOnly: 'Read Only',
+    accessModeOwnBreakdown: 'Own Breakdown',
+    accessModeOwner: 'Owner',
+    readOnlyBanner: 'This team is archived (Read-Only mode). Playback and downloads remain available; edits are disabled.',
+    quotaExceededError: 'Club storage quota reached (HTTP 413). Free up storage or increase the club quota.',
+    archivedTeamError: 'This team is archived (HTTP 409). Modifications are disabled.',
     openFilmRoom: 'Open Film Room',
     openSyncCut: 'Sync & Cut',
     shareReel: 'Share',
@@ -84,6 +113,8 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     uploadModeClips: 'Single Clips',
     uploadModeSlice: 'Single Tape (Time-Slice)',
     uploadModeBundle: 'sideline-bundle.json',
+    hudlCsvImportTitle: 'Import Hudl CSV Metadata',
+    hudlCsvAttachHint: 'Optional: attach a Hudl CSV export (.csv) to map breakdown columns directly.',
     filmRoomEmpty: 'Select a reel from the library to open the Film Room.',
     autoStop: 'Auto-Stop',
     fullscreen: 'Fullscreen',
@@ -92,15 +123,34 @@ export const VIDEO_WOERTERBUCH: SprachWoerterbuecher = {
     addPlay: 'Add Play',
     syncTitle: 'Multi-Angle Sync & Fast-Cut',
     playlistsTitle: 'Smart Playlists & Cutups',
-    shareModalTitle: 'Team & Link Sharing',
+    shareModalTitle: 'Visibility, Team & Link Sharing',
+    clubLibraryTitle: 'Club Video Library',
+    clubLibrarySubtitle: 'Manage all club videos centrally and share club-wide or with selected teams (Zero-Copy).',
     publicShareTitle: 'Shared Video Breakdown',
     publicShareExpired: 'This share link has expired or was revoked.',
     publicShareNotFound: 'Share link not found.',
     settingsUserTitle: 'Video Playback & Hotkeys',
-    settingsTeamTitle: 'Tagging Schema & Team Dictionary',
-    settingsSysadminTitle: 'Video S3 Storage & Retention',
-    editReel: 'Edit Reel & Angles',
+    settingsTeamTitle: 'Schema, Group Colors & Seasons',
+    settingsSysadminTitle: 'Video Storage & Quota',
+    editReel: 'Edit Reel, Angles & CSV',
     breakdownOverlayTitle: 'Breakdown Overlay',
-    annotationSharingTitle: 'Annotation Sharing & Color Codes',
+    annotationSharingTitle: 'Target Group Color Codes (userGroups)',
   },
 };
+
+/**
+ * Lokaler Übersetzungs-Helper (ersetzt SDK v1 `createPluginTranslator`, das in SDK v2.0 entfernt wurde).
+ */
+export function erstelleVideoTranslator(locale?: string) {
+  const lang: UnterstuetzteSprache = locale?.toLowerCase().startsWith('en') ? 'en' : 'de';
+  const paket = VIDEO_WOERTERBUCH[lang] ?? VIDEO_WOERTERBUCH.de;
+  return (schluessel: string, variablen?: Record<string, string | number | undefined>): string => {
+    let text = paket[schluessel] ?? VIDEO_WOERTERBUCH.de[schluessel] ?? schluessel;
+    if (variablen) {
+      for (const [k, v] of Object.entries(variablen)) {
+        text = text.replaceAll(`{${k}}`, v === undefined ? '' : String(v));
+      }
+    }
+    return text;
+  };
+}

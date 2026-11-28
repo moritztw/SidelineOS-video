@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
-import { createPluginTranslator } from '@sidelineos/plugin-sdk';
 import {
   AlertTriangle,
   Check,
@@ -17,8 +16,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
-import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
-import { videoApi } from '../services/apiClient';
+import { erstelleVideoTranslator } from '../i18n/woerterbuch';
 import {
   FRAME_MS,
   berechnePrevPlayOderClipStart,
@@ -42,8 +40,9 @@ interface SessionSchnittEintrag {
 }
 
 export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
-  const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
-  const { aktivesReel, aktivePlays, userPrefs, aktualisierePlaysLokal } = useVideoAnalysis();
+  const t = erstelleVideoTranslator(ctx.locale);
+  const { api, aktivesReel, aktivePlays, userPrefs, aktualisierePlaysLokal } = useVideoAnalysis();
+  const istSchreibgeschuetzt = Boolean(ctx.isReadOnly) || aktivesReel?.canEdit === false;
 
   const masterVideoRef = useRef<HTMLVideoElement | null>(null);
   const slaveVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -310,7 +309,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   };
 
   const setzeEinPunktSchnitt = async () => {
-    if (!aktivesReel) return;
+    if (!aktivesReel || istSchreibgeschuetzt) return;
     const zielEndMs = Math.round(tapePosMs / FRAME_MS) * FRAME_MS;
     if (zielEndMs <= cutStartMs + FRAME_MS) {
       setStatusHinweis('Schnitt-Position muss hinter dem aktuellen Clip-Beginn liegen.');
@@ -332,7 +331,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
     if (istInitialPlatzhalter && ersterPlay && ersterSrc) {
       const vorherEndMs = ersterSrc.endMs;
-      await videoApi.aktualisierePlay(ctx.team.id, ersterPlay.id, {
+      await api.aktualisierePlay(ersterPlay.id, {
         angleOffsets: {
           [zielWinkel]: {
             startMs: 0,
@@ -377,7 +376,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     // 2) Nachträglich hinzugefügter 2. Angle (#7): Existierenden Play ohne diesen Winkel befüllen statt Duplikate anzulegen
     const naechsterOhneWinkel = aktivePlays.find((p) => !p.sources[zielWinkel]);
     if (naechsterOhneWinkel && basisSrc) {
-      await videoApi.aktualisierePlay(ctx.team.id, naechsterOhneWinkel.id, {
+      await api.aktualisierePlay(naechsterOhneWinkel.id, {
         upsertSources: {
           [zielWinkel]: {
             fileName: basisSrc.fileName,
@@ -432,7 +431,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
     // 3) Standard: Neuen Spielzug erzeugen
     const nextNr = aktivePlays.reduce((m, p) => Math.max(m, p.playNumber), 0) + 1;
-    const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
+    const res = await api.erstellePlay(aktivesReel.id, {
       playNumber: nextNr,
       breakdown: { odk: 'O', play_number: nextNr },
       sources: basisSrc
@@ -488,12 +487,12 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const letztenSchnittRueckgaengig = async () => {
     const letzter = sessionCuts[sessionCuts.length - 1];
-    if (!letzter) return;
+    if (!letzter || istSchreibgeschuetzt) return;
 
     setTapeSpeed(0);
     if (letzter.warInitialPlatzhalter) {
       const resetEnd = letzter.vorherEndMs ?? tapeDauerMs;
-      await videoApi.aktualisierePlay(ctx.team.id, letzter.playId, {
+      await api.aktualisierePlay(letzter.playId, {
         angleOffsets: {
           [letzter.winkel]: { startMs: 0, endMs: resetEnd, offsetMs: null },
         },
@@ -523,7 +522,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         })
       );
     } else {
-      await videoApi.loeschePlay(ctx.team.id, letzter.playId);
+      await api.loeschePlay(letzter.playId);
       aktualisierePlaysLokal((alt) => alt.filter((p) => p.id !== letzter.playId));
     }
 
@@ -612,7 +611,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   }
 
   const speichereOffset = async (neuerOffsetMs: number) => {
-    if (!slaveQuelle) return;
+    if (!slaveQuelle || istSchreibgeschuetzt) return;
     aktualisierePlaysLokal((alt) =>
       alt.map((p) =>
         p.id === aktivesPlay.id
@@ -632,7 +631,7 @@ export function SyncAndCutView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         ((slaveQuelle.startMs ?? 0) + neuerOffsetMs + syncPosMs) / 1000
       );
     }
-    await videoApi.aktualisierePlay(ctx.team.id, aktivesPlay.id, {
+    await api.aktualisierePlay(aktivesPlay.id, {
       angleOffsets: { [sekundaerWinkel]: { offsetMs: neuerOffsetMs } },
     });
     setStatusHinweis(`Offset für ${sekundaerWinkel} auf ${neuerOffsetMs} ms gespeichert.`);

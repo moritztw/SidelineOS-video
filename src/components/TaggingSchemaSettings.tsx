@@ -49,7 +49,7 @@ export function TaggingSchemaSettings({
   };
 
   const handleWortLoeschen = async (feldKey: string, wert: string) => {
-    const res = entferneWoerterbuchEintrag(schema, feldKey, wert, teamRolle ?? 'PLAYER');
+    const res = entferneWoerterbuchEintrag(schema, feldKey, wert, teamRolle ?? 'MEMBER');
     if (!res.ok) {
       setFehler(res.fehler ?? 'Keine Berechtigung.');
       return;

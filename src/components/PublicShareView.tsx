@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPluginTranslator } from '@sidelineos/plugin-sdk';
 import {
   AlertCircle,
   Archive,
@@ -10,8 +9,8 @@ import {
   Film,
   Video,
 } from 'lucide-react';
-import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
-import { videoApi } from '../services/apiClient';
+import { erstelleVideoTranslator } from '../i18n/woerterbuch';
+import { holeOeffentlichenShare } from '../services/apiClient';
 import {
   konvertierePlaysZuCsv,
   konvertiereReelZuSidelineBundle,
@@ -38,9 +37,9 @@ export function PublicShareView({
 }: {
   token: string;
   locale?: string;
-  onSchliessen: () => void;
+  onSchliessen?: () => void;
 }) {
-  const t = createPluginTranslator(VIDEO_WOERTERBUCH, locale);
+  const t = erstelleVideoTranslator(locale);
   const [status, setStatus] = useState<number>(200);
   const [laedt, setLaedt] = useState(true);
   const [daten, setDaten] = useState<PublicShareAnsichtDaten | null>(null);
@@ -53,8 +52,7 @@ export function PublicShareView({
   useEffect(() => {
     setLaedt(true);
     setDownloadFehler(null);
-    videoApi
-      .holeOeffentlichenShare(token)
+    holeOeffentlichenShare(token)
       .then((res) => {
         setStatus(res.status);
         setDaten(res.data ?? null);
@@ -116,14 +114,16 @@ export function PublicShareView({
         <p className="text-sm text-sl-muted">
           {status === 410 ? t('publicShareExpired') : t('publicShareNotFound')}
         </p>
-        <button
-          type="button"
-          onClick={onSchliessen}
-          className="inline-flex items-center gap-2 rounded-lg border border-sl-border px-4 py-2 text-xs text-sl-heading hover:bg-sl-elevated"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-          Zurück
-        </button>
+        {onSchliessen && (
+          <button
+            type="button"
+            onClick={onSchliessen}
+            className="inline-flex items-center gap-2 rounded-lg border border-sl-border px-4 py-2 text-xs text-sl-heading hover:bg-sl-elevated"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Zurück
+          </button>
+        )}
       </div>
     );
   }
@@ -142,7 +142,7 @@ export function PublicShareView({
         title: daten.reel.title,
         category: daten.reel.category,
         eventDate: daten.reel.eventDate,
-        visibility: 'COACHES_ONLY',
+        visibility: 'STAFF_ONLY',
         angles: daten.reel.angles,
       },
       daten.plays,
@@ -217,7 +217,7 @@ export function PublicShareView({
             title: daten.reel.title,
             category: daten.reel.category,
             eventDate: daten.reel.eventDate,
-            visibility: 'COACHES_ONLY',
+            visibility: 'STAFF_ONLY',
             angles: daten.reel.angles,
           },
           daten.plays,
@@ -311,13 +311,15 @@ export function PublicShareView({
             </>
           )}
 
-          <button
-            type="button"
-            onClick={onSchliessen}
-            className="rounded-lg bg-sl-elevated px-3 py-2 text-xs font-medium text-sl-heading hover:bg-sl-border-strong whitespace-nowrap"
-          >
-            Schließen
-          </button>
+          {onSchliessen && (
+            <button
+              type="button"
+              onClick={onSchliessen}
+              className="rounded-lg bg-sl-elevated px-3 py-2 text-xs font-medium text-sl-heading hover:bg-sl-border-strong whitespace-nowrap"
+            >
+              Schließen
+            </button>
+          )}
         </div>
       </header>
 
@@ -326,11 +328,10 @@ export function PublicShareView({
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-sl-accent" aria-hidden="true" />
           <div>
             <span className="font-semibold text-sl-heading">
-              Direkte Video-Streams für öffentliche Links warten auf das Core-SDK-Update.
+              Für diesen Share-Link liegen derzeit keine signierten Video-Streams vor.
             </span>{' '}
-            Sobald SidelineOS-Core signierte Read-Only-Download-URLs für öffentliche Share-Links
-            ausliefert, erscheinen hier automatisch alle Einzel-Video-Downloads und das komplette
-            Video-ZIP-Archiv.
+            Prüfe die Storage-Konfiguration im Verein oder lade die freigegebenen Breakdown-Daten
+            direkt als JSON/CSV herunter.
           </div>
         </div>
       )}

@@ -16,13 +16,21 @@ const GUELTIGE_KATEGORIEN = new Set<VideoKategorie>([
   'CUSTOM',
 ]);
 
-const GUELTIGE_SICHTBARKEITEN = new Set<SichtbarkeitsStufe>([
+const GUELTIGE_BASIS_SICHTBARKEITEN = new Set<string>([
+  'STAFF_ONLY',
+  'ALL_MEMBERS',
   'COACHES_ONLY',
   'ALL_PLAYERS',
   'UNIT_OFFENSE',
   'UNIT_DEFENSE',
   'UNIT_SPECIAL_TEAMS',
 ]);
+
+function istGueltigeSichtbarkeit(val: unknown): val is SichtbarkeitsStufe {
+  if (typeof val !== 'string') return false;
+  if (GUELTIGE_BASIS_SICHTBARKEITEN.has(val)) return true;
+  return val.startsWith('GROUP:') && val.length > 6;
+}
 
 const GUELTIGE_MODI = new Set<QuellenModus>(['CLIP_FILE', 'TIME_SLICE']);
 
@@ -54,7 +62,7 @@ export function validiereSidelineBundle(
     }
     if (
       reel.visibility !== undefined &&
-      !GUELTIGE_SICHTBARKEITEN.has(reel.visibility as SichtbarkeitsStufe)
+      !istGueltigeSichtbarkeit(reel.visibility)
     ) {
       fehler.push('reel.visibility ist ungültig.');
     }

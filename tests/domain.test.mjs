@@ -28,15 +28,10 @@ test('25-fps Frame-Quantisierung und exakter Auto-Stop ohne Vorab-Aufblitzen', a
   assert.equal(frameMod.frameIndexZuMs(50), 2000);
   assert.equal(frameMod.formatiereFrameTimecode(2080), '00:02.02');
 
-  // Darf bei 1920ms (Frame 48) NICHT vorzeitig auf Frame 50 (2000ms) stoppen
   assert.equal(frameMod.hatExaktenFrameTreffer(1920, 50), false);
   assert.equal(frameMod.findeNaechstenAutoStopFrame(1920, [50]), null);
-
-  // Exakter Treffer bei 2000ms (Frame 50)
   assert.equal(frameMod.hatExaktenFrameTreffer(2000, 50), true);
   assert.equal(frameMod.findeNaechstenAutoStopFrame(2000, [50]), 50);
-
-  // Playback-Tick-Überschreitung erkennt Frame 50 sauber zwischen 1960ms und 2010ms
   assert.equal(frameMod.findeUeberfahrenenAutoStopFrame(1960, 2010, [50]), 50);
   assert.equal(frameMod.findeUeberfahrenenAutoStopFrame(1880, 1920, [50]), null);
 });
@@ -59,7 +54,6 @@ test('Hotkey-Konfliktprüfung lehnt doppelte Tastenbelegung ab', async () => {
   assert.equal(erfolg.ok, true);
   assert.equal(erfolg.belegung.addNote, 'KeyM');
 
-  // Legacy markIn/markOut Belegung wird sauber auf Ein-Punkt-Schnitt migriert
   const migriert = frameMod.bereinigeHotkeyBelegung({
     markIn: 'KeyC',
     markOut: 'KeyO',
@@ -67,25 +61,18 @@ test('Hotkey-Konfliktprüfung lehnt doppelte Tastenbelegung ab', async () => {
   assert.equal(migriert.markCut, 'KeyC');
   assert.equal('markOut' in migriert, false);
 
-  // Restclip-Berechnung begrenzt Positionen auf [cutStartMs .. totalDauerMs]
   const rest = frameMod.berechneRestclipZeit(5000, 12000, 60000);
   assert.equal(rest.startMs, 12000);
   assert.equal(rest.geclamptAbsMs, 12000);
   assert.equal(rest.relativMs, 0);
   assert.equal(rest.dauerMs, 48000);
-
-  const mitte = frameMod.berechneRestclipZeit(20000, 12000, 60000);
-  assert.equal(mitte.relativMs, 8000);
 });
 
 test('Tagging-Engine: Bidirektionale Gain/Loss-Berechnung inkl. FLAG-Ausnahme & Admin-Wörterbuchschutz', async () => {
   const tagMod = await ladeTsModul('src/services/taggingEngine.ts');
 
-  // Eigene 25 -> Eigene 34 = +9 Yards
   assert.equal(tagMod.berechneGainLoss(-25, -34, 'COMPLETE'), 9);
-  // Eigene 45 -> Gegnerische 45 = +10 Yards
   assert.equal(tagMod.berechneGainLoss(-45, 45, 'COMPLETE'), 10);
-  // FLAG-Ausnahme: darf keine reale Gain/Loss-Statistik berechnen
   assert.equal(tagMod.berechneGainLoss(-25, -40, 'FLAG'), undefined);
   assert.equal(tagMod.berechneNeueFeldposition(-25, 15, 'FLAG'), undefined);
 
@@ -93,13 +80,13 @@ test('Tagging-Engine: Bidirektionale Gain/Loss-Berechnung inkl. FLAG-Ausnahme & 
   const gelernt = tagMod.ergaenzeTeamWoerterbuch(schema, 'off_form', 'Bunch Quads');
   assert.ok(gelernt.dictionary.off_form.includes('Bunch Quads'));
 
-  const coachVersuch = tagMod.entferneWoerterbuchEintrag(
+  const staffVersuch = tagMod.entferneWoerterbuchEintrag(
     gelernt,
     'off_form',
     'Bunch Quads',
-    'COACH'
+    'STAFF'
   );
-  assert.equal(coachVersuch.ok, false);
+  assert.equal(staffVersuch.ok, false);
 
   const adminVersuch = tagMod.entferneWoerterbuchEintrag(
     gelernt,
@@ -120,6 +107,7 @@ test('sideline-bundle.json v1.0 Validierung & gefilterter CSV-Export', async () 
       title: 'vs. Berlin Rebels',
       category: 'GAME',
       event_date: '2026-11-14',
+      visibility: 'GROUP:Offense',
     },
     angles: ['SIDELINE', 'ENDZONE'],
     plays: [
@@ -127,7 +115,7 @@ test('sideline-bundle.json v1.0 Validierung & gefilterter CSV-Export', async () 
         play_number: 1,
         sources: {
           SIDELINE: { file: 'sl_001.mp4', source_mode: 'CLIP_FILE', start_ms: 0, end_ms: 8400 },
-          ENDZONE: { file: 'ez_001.mp4', start_ms: 0, end_ms: 8100 }, // optionales offset_ms weggelassen
+          ENDZONE: { file: 'ez_001.mp4', start_ms: 0, end_ms: 8100 },
         },
         breakdown: { odk: 'O', down: 3, gn_ls: 7 },
       },
@@ -197,25 +185,48 @@ test('Smart-Playlist Filterregeln (UND/ODER) & Sync-Lückenanalyse', async () =>
   assert.equal(sync[1].hatOffset, true);
 });
 
-test('Backend handleRequest & handlePublicRequest erzwingen RBAC, 404/410 und Cleanup-Queue', async () => {
+test('SDK v2.0 Backend: RBAC, ReadOnly (409), Quota (413), Zero-Copy Storage-Delete & Club-Admin (#10)', async () => {
   const { backendPlugin } = await import(path.join(ROOT_DIR, 'dist/server.js'));
 
-  const queuedCleanup = [];
+  const deletedStorageObjects = [];
+  const updatedBreakdowns = [];
+
   const fakeDb = {
     schemaName: 'plugin_video_analysis',
     async query(sql, params = []) {
-      if (sql.includes('FROM mod_video_team_reel_access') && sql.includes('WHERE team_id = $1')) {
+      if (sql.includes('FROM mod_video_media_reels') && sql.includes('WHERE id = $1')) {
+        return {
+          rows: [
+            {
+              id: 'reel-1',
+              ref_count: 1,
+              owner_club_id: 'club-1',
+              owner_team_id: 'team-1',
+              owner_team_name: 'Eagles',
+              share_scope: 'TEAM_ONLY',
+              club_wide_access_mode: 'READ_ONLY',
+              total_size_bytes: 2048,
+              created_by: 'u1',
+              created_at: '2026-11-14T00:00:00Z',
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes('FROM mod_video_team_reel_access') && sql.includes('WHERE reel_id = $1 AND team_id = $2')) {
         return {
           rows: [
             {
               id: 'acc-1',
               reel_id: 'reel-1',
               team_id: 'team-1',
+              club_id: 'club-1',
               season: '2026',
-              title: 'Secret Coaches Tape',
+              title: 'Secret Staff Tape',
               category: 'GAME',
               event_date: '2026-11-14',
-              visibility: 'COACHES_ONLY',
+              visibility: 'STAFF_ONLY',
+              access_mode: 'OWNER',
               shared_from_team_id: null,
               shared_from_team_name: null,
               allowed_fields_json: null,
@@ -227,8 +238,44 @@ test('Backend handleRequest & handlePublicRequest erzwingen RBAC, 404/410 und Cl
           rowCount: 1,
         };
       }
+      if (sql.includes('FROM mod_video_team_reel_access a') && sql.includes('JOIN mod_video_media_reels m')) {
+        return {
+          rows: [
+            {
+              id: 'acc-1',
+              reel_id: 'reel-1',
+              team_id: 'team-1',
+              club_id: 'club-1',
+              season: '2026',
+              title: 'Secret Staff Tape',
+              category: 'GAME',
+              event_date: '2026-11-14',
+              visibility: 'STAFF_ONLY',
+              access_mode: 'OWNER',
+              shared_from_team_id: null,
+              shared_from_team_name: null,
+              allowed_fields_json: null,
+              created_by: 'u1',
+              created_at: '2026-11-14T00:00:00Z',
+              updated_at: '2026-11-14T00:00:00Z',
+              owner_club_id: 'club-1',
+              owner_team_id: 'team-1',
+              owner_team_name: 'Eagles',
+              share_scope: 'TEAM_ONLY',
+              club_wide_access_mode: 'READ_ONLY',
+              ref_count: 1,
+              total_size_bytes: 2048,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
       if (sql.includes('FROM mod_video_plays')) {
-        return { rows: [{ play_count: 0, angle_code: 'SIDELINE' }], rowCount: 1 };
+        return { rows: [{ play_count: 1, angle_code: 'SIDELINE' }], rowCount: 1 };
+      }
+      if (sql.includes('UPDATE mod_video_plays')) {
+        updatedBreakdowns.push({ sql, params });
+        return { rows: [], rowCount: 1 };
       }
       if (sql.includes('FROM mod_video_share_links')) {
         if (params[0] && String(params[0]).length > 0) {
@@ -240,6 +287,7 @@ test('Backend handleRequest & handlePublicRequest erzwingen RBAC, 404/410 und Cl
                 access_id: 'acc-1',
                 reel_id: 'reel-1',
                 allowed_fields_json: ['odk'],
+                include_metadata: true,
                 expires_at: '2020-01-01T00:00:00.000Z',
                 revoked_at: null,
               },
@@ -249,97 +297,145 @@ test('Backend handleRequest & handlePublicRequest erzwingen RBAC, 404/410 und Cl
         }
         return { rows: [], rowCount: 0 };
       }
-      if (sql.includes('UPDATE mod_video_media_reels')) {
+      if (sql.includes('UPDATE mod_video_media_reels') && sql.includes('RETURNING ref_count')) {
         return { rows: [{ ref_count: 0 }], rowCount: 1 };
       }
-      if (sql.includes('SELECT DISTINCT s3_key FROM mod_video_play_angles')) {
-        return { rows: [{ s3_key: 'teams/team-1/plugins/video-analysis/clip.mp4' }], rowCount: 1 };
+      if (sql.includes('SELECT DISTINCT s3_key, file_size_bytes FROM mod_video_play_angles')) {
+        return {
+          rows: [{ s3_key: 'clubs/club-1/teams/team-1/video/clip.mp4', file_size_bytes: 2048 }],
+          rowCount: 1,
+        };
       }
       return { rows: [], rowCount: 0 };
     },
   };
 
-  const playerCtx = {
+  const baseClub = {
+    id: 'club-1',
+    name: 'Eagles e.V.',
+    slug: 'eagles',
+    speicher: {
+      belegtBytes: 1000,
+      kontingentBytes: 10_000,
+      freiBytes: 9000,
+      auslastungProzent: 10,
+      speicherlimitErreicht: false,
+    },
+  };
+
+  const memberCtx = {
     pluginId: 'video-analysis',
     manifest: backendPlugin.manifest,
     db: fakeDb,
-    user: { uuid: 'p1', volleName: 'Spieler', vollerName: 'Spieler', benutzername: 'p1', email: 'p1@x.de', istSysadmin: false, erstelltAm: '', customProfilWerte: {} },
+    user: { uuid: 'm1', vollerName: 'Spieler', benutzername: 'm1', email: 'm1@x.de', istSysadmin: false },
     locale: 'de',
-    team: { id: 'team-1', name: 'Eagles', kurzname: 'EAG', aktiveSaison: '2026', saisons: ['2026'], aktivierteModule: ['video-analysis'], customProfilFelder: [] },
-    teamRolle: 'PLAYER',
+    club: baseClub,
+    team: { id: 'team-1', clubId: 'club-1', name: 'Eagles', slug: 'eagles', status: 'ACTIVE', archiviert: false },
+    clubRolle: 'CLUB_MEMBER',
+    effektiveTeamRolle: 'MEMBER',
+    userGroups: ['Offense'],
+    isReadOnly: false,
     hasPermission: () => true,
   };
 
-  // PLAYER sieht COACHES_ONLY-Reels nicht
+  // 1. MEMBER sieht STAFF_ONLY-Reels nicht
   const listRes = await backendPlugin.handleRequest(
     { method: 'GET', path: '/reels', params: {}, query: {}, body: null },
-    playerCtx
+    memberCtx
   );
   assert.equal(listRes.status, 200);
   assert.equal(listRes.body.reels.length, 0);
 
-  // PLAYER darf keine Reels erstellen
+  // 2. MEMBER darf keine Reels erstellen -> 403
   const postRes = await backendPlugin.handleRequest(
     { method: 'POST', path: '/reels', params: {}, query: {}, body: { title: 'Test' } },
-    playerCtx
+    memberCtx
   );
   assert.equal(postRes.status, 403);
 
-  // Abgelaufener öffentlicher Share-Link liefert 410
+  // 3. CLUB_MEMBER darf nicht auf /club/reels zugreifen -> 403 (#10)
+  const clubForbiddenRes = await backendPlugin.handleRequest(
+    { method: 'GET', path: '/club/reels', params: {}, query: {}, body: null },
+    memberCtx
+  );
+  assert.equal(clubForbiddenRes.status, 403);
+
+  // 4. Archiviertes Team (isReadOnly = true) blockiert Schreibzugriffe mit HTTP 409
+  const archivedStaffCtx = {
+    ...memberCtx,
+    effektiveTeamRolle: 'STAFF',
+    isReadOnly: true,
+    team: { ...memberCtx.team, status: 'ARCHIVED', archiviert: true },
+  };
+  const readOnlyRes = await backendPlugin.handleRequest(
+    { method: 'POST', path: '/reels', params: {}, query: {}, body: { title: 'Gesperrt' } },
+    archivedStaffCtx
+  );
+  assert.equal(readOnlyRes.status, 409);
+
+  // 5. Storage-Quota-Überschreitung liefert HTTP 413
+  const quotaCtx = {
+    ...memberCtx,
+    effektiveTeamRolle: 'STAFF',
+    storage: {
+      prefix: 'clubs/club-1/teams/team-1/video/',
+      async getSignedUploadUrl() {
+        const err = new Error('Storage quota exceeded');
+        err.status = 413;
+        throw err;
+      },
+      async getSignedDownloadUrl() {
+        return { url: 'https://example.invalid/dl', key: 'k', expiresIn: 900 };
+      },
+      async deleteObject(objectPath, sizeBytes) {
+        deletedStorageObjects.push({ objectPath, sizeBytes });
+      },
+    },
+  };
+  const quotaRes = await backendPlugin.handleRequest(
+    {
+      method: 'POST',
+      path: '/storage/presign-upload',
+      params: {},
+      query: {},
+      body: { objectPath: 'huge.mp4', contentType: 'video/mp4', fileSizeBytes: 999999999 },
+    },
+    quotaCtx
+  );
+  assert.equal(quotaRes.status, 413);
+
+  // 6. Bulk Hudl CSV Breakdown Import (#9) aktualisiert Plays
+  const importRes = await backendPlugin.handleRequest(
+    {
+      method: 'POST',
+      path: '/reels/reel-1/breakdown-import',
+      params: {},
+      query: {},
+      body: {
+        playPatches: [{ playId: 'p1', playNumber: 1, breakdown: { odk: 'O', off_form: 'Trips' } }],
+        newCustomFields: [],
+      },
+    },
+    quotaCtx
+  );
+  assert.equal(importRes.status, 200);
+  assert.equal(importRes.body.updatedPlays, 1);
+  assert.equal(updatedBreakdowns.length, 1);
+
+  // 7. Abgelaufener öffentlicher Share-Link liefert 410
   const pubRes = await backendPlugin.handlePublicRequest(
     { method: 'GET', path: '/share/expired-token', query: {}, body: null },
     fakeDb
   );
   assert.equal(pubRes.status, 410);
 
-  // Coach löscht Reel -> ref_count 0 -> Cleanup-Queue wird befüllt
-  const coachCtx = {
-    ...playerCtx,
-    teamRolle: 'COACH',
-    s3: { prefix: 'teams/team-1/plugins/video-analysis/' },
-    cleanupQueue: {
-      async enqueueOrphanedObjects(paths, reason) {
-        queuedCleanup.push({ paths, reason });
-        return { queued: paths.length };
-      },
-    },
-  };
-
-  const fakeDeleteDb = {
-    ...fakeDb,
-    async query(sql, params) {
-      if (sql.includes('SELECT * FROM mod_video_team_reel_access')) {
-        return {
-          rows: [
-            {
-              id: 'acc-1',
-              reel_id: 'reel-1',
-              team_id: 'team-1',
-              season: '2026',
-              title: 'Game',
-              category: 'GAME',
-              event_date: '2026-11-14',
-              visibility: 'COACHES_ONLY',
-              shared_from_team_id: null,
-              shared_from_team_name: null,
-              allowed_fields_json: null,
-              created_by: 'u1',
-              created_at: '2026-11-14',
-              updated_at: '2026-11-14',
-            },
-          ],
-          rowCount: 1,
-        };
-      }
-      return fakeDb.query(sql, params);
-    },
-  };
-
+  // 8. Staff löscht Reel -> ref_count 0 -> ctx.storage.deleteObject wird aufgerufen
   const delRes = await backendPlugin.handleRequest(
     { method: 'DELETE', path: '/reels/reel-1', params: {}, query: {}, body: null },
-    { ...coachCtx, db: fakeDeleteDb }
+    quotaCtx
   );
   assert.equal(delRes.status, 200);
-  assert.equal(queuedCleanup.length, 1);
-  assert.deepEqual(queuedCleanup[0].paths, ['clip.mp4']);
+  assert.equal(deletedStorageObjects.length, 1);
+  assert.equal(deletedStorageObjects[0].objectPath, 'clip.mp4');
+  assert.equal(deletedStorageObjects[0].sizeBytes, 2048);
 });

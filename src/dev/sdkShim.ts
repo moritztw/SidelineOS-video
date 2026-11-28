@@ -1,45 +1,32 @@
 import type {
-  SprachWoerterbuecher,
-  UnterstuetzteSprache,
+  PluginPermission,
+  PrivilegiertePluginPermission,
+  SidelineBackendPlugin,
+  SidelinePlugin,
 } from '@sidelineos/plugin-sdk';
 
-export function uebersetzeSchluessel(
-  woerterbuecher: SprachWoerterbuecher,
-  sprache: string | undefined,
-  schluessel: string,
-  variablen?: Record<string, string | number | undefined>
-): string {
-  const code: UnterstuetzteSprache = sprache === 'en' ? 'en' : 'de';
-  let text = woerterbuecher[code]?.[schluessel] ?? woerterbuecher.de[schluessel] ?? schluessel;
-  if (variablen) {
-    for (const [k, v] of Object.entries(variablen)) {
-      text = text.replaceAll(`{{${k}}}`, String(v ?? ''));
-    }
-  }
-  return text;
+export const SIDELINE_SDK_VERSION = '2.0' as const;
+
+export const PRIVILEGIERTE_CAPABILITIES: readonly PrivilegiertePluginPermission[] = [
+  'storage:provider',
+  'core:org-manage',
+  'core:users-manage',
+  'core:plugins-manage',
+  'core:storage-quota-manage',
+  'core:storage-nodes-manage',
+  'dev:git-install',
+] as const;
+
+export function istPrivilegierteCapability(
+  permission: PluginPermission
+): permission is PrivilegiertePluginPermission {
+  return (PRIVILEGIERTE_CAPABILITIES as readonly string[]).includes(permission);
 }
 
-export function createPluginTranslator(
-  woerterbuecher: SprachWoerterbuecher,
-  locale?: string
-) {
-  return (schluessel: string, variablen?: Record<string, string | number | undefined>) =>
-    uebersetzeSchluessel(woerterbuecher, locale, schluessel, variablen);
+export function definierePlugin(plugin: SidelinePlugin): SidelinePlugin {
+  return plugin;
 }
 
-export function ermittleEintragSaison(eintrag: {
-  saison?: string;
-  eventDate: string;
-}): string {
-  const explizit = eintrag.saison?.trim();
-  if (explizit) return explizit;
-  return eintrag.eventDate.slice(0, 4);
-}
-
-export function filtereNachSaison<T extends { saison?: string; eventDate: string }>(
-  eintraege: readonly T[],
-  saison: string
-): T[] {
-  if (!saison || saison === 'ALL') return [...eintraege];
-  return eintraege.filter((eintrag) => ermittleEintragSaison(eintrag) === saison);
+export function definiereBackendPlugin(plugin: SidelineBackendPlugin): SidelineBackendPlugin {
+  return plugin;
 }

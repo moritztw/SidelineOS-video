@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { TeamRolle } from '@sidelineos/plugin-sdk';
-import { MessageSquare, Pencil, Plus, Trash2 } from 'lucide-react';
-import type { PlayAnmerkungsZaehler } from '../services/annotationVisibility';
+import { FileSpreadsheet, MessageSquare, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  istStaffOderAdminRolle,
+  type PlayAnmerkungsZaehler,
+} from '../services/annotationVisibility';
 import {
   berechneGainLoss,
   berechneNeueFeldposition,
@@ -18,13 +21,15 @@ interface BreakdownGridProps {
   plays: PlayEintrag[];
   aktivesPlayId: string | null;
   schema: TeamTaggingSchema;
-  teamRolle: TeamRolle;
+  teamRolle: TeamRolle | null;
+  readOnly?: boolean;
   erlaubteSpalten?: string[] | null;
   anmerkungenProPlay?: Record<string, PlayAnmerkungsZaehler>;
   onSelectPlay: (playId: string) => void;
   onUpdatePlay: (playId: string, breakdown: PlayBreakdownDaten) => Promise<void>;
   onAddPlay?: () => Promise<void>;
   onDeletePlay?: (playId: string) => Promise<void>;
+  onOpenHudlCsvImport?: () => void;
   onSchemaLearn: (nextSchema: TeamTaggingSchema) => Promise<void>;
 }
 
@@ -33,15 +38,17 @@ export function BreakdownGrid({
   aktivesPlayId,
   schema,
   teamRolle,
+  readOnly = false,
   erlaubteSpalten,
   anmerkungenProPlay,
   onSelectPlay,
   onUpdatePlay,
   onAddPlay,
   onDeletePlay,
+  onOpenHudlCsvImport,
   onSchemaLearn,
 }: BreakdownGridProps) {
-  const istCoachOderAdmin = teamRolle === 'COACH' || teamRolle === 'TEAM_ADMIN';
+  const istCoachOderAdmin = !readOnly && istStaffOderAdminRolle(teamRolle);
   const [fokusFeld, setFokusFeld] = useState<string | null>(null);
 
   const spalten = useMemo(
@@ -124,16 +131,28 @@ export function BreakdownGrid({
           <h3 className="text-sm font-semibold text-sl-heading">Hudl-Breakdown</h3>
           <span className="text-xs text-sl-muted video-tabular">{plays.length} Spielzüge</span>
         </div>
-        {istCoachOderAdmin && onAddPlay && (
-          <button
-            type="button"
-            onClick={onAddPlay}
-            className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs font-medium text-sl-primary hover:border-sl-accent hover:text-sl-heading whitespace-nowrap shrink-0"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Spielzug
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {istCoachOderAdmin && onOpenHudlCsvImport && (
+            <button
+              type="button"
+              onClick={onOpenHudlCsvImport}
+              className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs font-medium text-sl-primary hover:border-sl-accent hover:text-sl-heading whitespace-nowrap shrink-0"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-sl-accent" aria-hidden="true" />
+              Hudl CSV importieren
+            </button>
+          )}
+          {istCoachOderAdmin && onAddPlay && (
+            <button
+              type="button"
+              onClick={onAddPlay}
+              className="inline-flex items-center gap-1.5 rounded-md border border-sl-border bg-sl-canvas px-3 py-1.5 text-xs font-medium text-sl-primary hover:border-sl-accent hover:text-sl-heading whitespace-nowrap shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Spielzug
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto">

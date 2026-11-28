@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
-import { createPluginTranslator } from '@sidelineos/plugin-sdk';
 import {
   ArrowUpRight,
   ChevronLeft,
@@ -8,6 +7,7 @@ import {
   Circle,
   Eraser,
   Highlighter,
+  Lock,
   Maximize2,
   MessageSquarePlus,
   Minimize2,
@@ -24,17 +24,19 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
-import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
+import { erstelleVideoTranslator } from '../i18n/woerterbuch';
 import {
-  ANMERKUNGS_ZIELGRUPPEN,
   bereinigeAnmerkungsKonfig,
+  ermittleZielgruppenOptionen,
   filtereTelestrationElementeFuerBenutzer,
   findeZielgruppeZuFarbe,
+  holeFarbeFuerSichtbarkeit,
+  holeLabelFuerSichtbarkeit,
   istAnmerkungFuerBenutzerSichtbar,
+  istStaffOderAdminRolle,
   sammleFrameAnmerkungsMarker,
   sammlePlayAnmerkungsZaehler,
 } from '../services/annotationVisibility';
-import { videoApi } from '../services/apiClient';
 import {
   FRAME_MS,
   berechnePrevPlayOderClipStart,
@@ -51,6 +53,7 @@ import { erstelleStandardTeamSchema } from '../services/taggingEngine';
 import type {
   CoachNotiz,
   EckPosition,
+  HudlCsvImportErgebnis,
   NotizStatus,
   PlayBreakdownDaten,
   SichtbarkeitsStufe,
@@ -60,6 +63,7 @@ import type {
 } from '../types/video';
 import { BreakdownGrid } from './BreakdownGrid';
 import { BreakdownOverlay } from './BreakdownOverlay';
+import { HudlCsvImportDialog } from './HudlCsvImportDialog';
 import { TelestrationCanvas } from './TelestrationCanvas';
 
 const KLASSISCHE_FARBEN = ['#F59E0B', '#EF4444', '#38BDF8', '#22C55E', '#FFFFFF'];
@@ -89,8 +93,9 @@ function DashedLineIcon() {
 }
 
 export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
-  const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
+  const t = erstelleVideoTranslator(ctx.locale);
   const {
+    api,
     aktivesReel,
     aktivePlays,
     telestrations,
@@ -99,6 +104,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     userPrefs,
     aktiverPlaylistFilterIds,
     setAktiverPlaylistFilterIds,
+    oeffneReel,
     aktualisierePlaysLokal,
     aktualisiereTelestrationsLokal,
     aktualisiereNotizenLokal,
@@ -110,13 +116,18 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const notizInputRef = useRef<HTMLInputElement | null>(null);
   const letzteMsRef = useRef(0);
 
+  const istStaffOderAdmin = istStaffOderAdminRolle(ctx.effektiveTeamRolle);
   const istCoachOderAdmin =
-    ctx.aktiveTeamAnsicht === 'COACH' || ctx.aktiveTeamAnsicht === 'TEAM_ADMIN';
+    istStaffOderAdmin && !ctx.isReadOnly && aktivesReel?.canEdit !== false;
 
-  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
+  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team?.id ?? 'team');
   const sharingKonfig = useMemo(
     () => bereinigeAnmerkungsKonfig(schema.annotationSharing),
     [schema.annotationSharing]
+  );
+  const zielgruppenOptionen = useMemo(
+    () => ermittleZielgruppenOptionen(sharingKonfig, ctx.locale),
+    [sharingKonfig, ctx.locale]
   );
   const hotkeys = useMemo(
     () => bereinigeHotkeyBelegung(userPrefs?.hotkeys),
@@ -139,22 +150,25 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
   const [autoStop, setAutoStop] = useState<boolean>(userPrefs?.autoStopEnabled ?? true);
   const [istVollbild, setIstVollbild] = useState(false);
   const [werkzeug, setWerkzeug] = useState<TelestrationWerkzeug>('select');
-  const [aktiveZielgruppe, setAktiveZielgruppe] = useState<SichtbarkeitsStufe>('ALL_PLAYERS');
-  const [farbe, setFarbe] = useState<string>(sharingKonfig.colorMap.ALL_PLAYERS);
+  const [aktiveZielgruppe, setAktiveZielgruppe] = useState<SichtbarkeitsStufe>('ALL_MEMBERS');
+  const [farbe, setFarbe] = useState<string>(
+    holeFarbeFuerSichtbarkeit(sharingKonfig, 'ALL_MEMBERS')
+  );
   const [selectedElId, setSelectedElId] = useState<string | null>(null);
   const [zeichenBarSichtbar, setZeichenBarSichtbar] = useState(true);
   const [breakdownOverlayOffen, setBreakdownOverlayOffen] = useState(false);
+  const [hudlCsvModalOffen, setHudlCsvModalOffen] = useState(false);
   const [coachFilterGruppe, setCoachFilterGruppe] = useState<'ALL' | SichtbarkeitsStufe>('ALL');
   const [notizEntwurfText, setNotizEntwurfText] = useState('');
-  const [notizZielgruppe, setNotizZielgruppe] = useState<SichtbarkeitsStufe>('ALL_PLAYERS');
+  const [notizZielgruppe, setNotizZielgruppe] = useState<SichtbarkeitsStufe>('ALL_MEMBERS');
   const [editNotizId, setEditNotizId] = useState<string | null>(null);
 
   // Farbe synchron halten, wenn Admin Farbschema ändert und Farb-Sharing aktiv ist
   useEffect(() => {
     if (sharingKonfig.enabled) {
-      setFarbe(sharingKonfig.colorMap[aktiveZielgruppe]);
+      setFarbe(holeFarbeFuerSichtbarkeit(sharingKonfig, aktiveZielgruppe));
     }
-  }, [sharingKonfig.enabled, sharingKonfig.colorMap, aktiveZielgruppe]);
+  }, [sharingKonfig, aktiveZielgruppe]);
 
   const aktivesPlay = useMemo(
     () => sichtbarePlays.find((p) => p.id === aktivesPlayId) ?? sichtbarePlays[0] ?? null,
@@ -202,17 +216,17 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     setVideoFehler(null);
   }, [aktiveQuelle?.streamUrl, aktivesPlay?.id, aktiverWinkel]);
 
-  // Rollen-, Unit- und optionaler Coach-Vorschau-Filter (#2)
+  // Rollen-, Gruppen- und optionaler Coach-Vorschau-Filter (#2)
   const sichtbareTelestrations = useMemo(() => {
     return telestrations
       .map((tel) => {
         let filtered = filtereTelestrationElementeFuerBenutzer(
           tel.elements,
-          ctx.aktiveTeamAnsicht,
-          ctx.userUnits,
+          ctx.effektiveTeamRolle,
+          ctx.userGroups,
           sharingKonfig.enabled
         );
-        if (istCoachOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
+        if (istStaffOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
           filtered = filtered.filter(
             (el) => (el.visibility ?? findeZielgruppeZuFarbe(sharingKonfig, el.color)) === coachFilterGruppe
           );
@@ -222,36 +236,36 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       .filter((tel) => tel.elements.length > 0);
   }, [
     telestrations,
-    ctx.aktiveTeamAnsicht,
-    ctx.userUnits,
+    ctx.effektiveTeamRolle,
+    ctx.userGroups,
     sharingKonfig,
-    istCoachOderAdmin,
+    istStaffOderAdmin,
     coachFilterGruppe,
   ]);
 
   const sichtbareNotizen = useMemo(() => {
     return notizen.filter((n) => {
-      if (!istCoachOderAdmin && n.status !== 'PUBLISHED') return false;
+      if (!istStaffOderAdmin && n.status !== 'PUBLISHED') return false;
       if (
         !istAnmerkungFuerBenutzerSichtbar(
           n.visibility,
-          ctx.aktiveTeamAnsicht,
-          ctx.userUnits,
+          ctx.effektiveTeamRolle,
+          ctx.userGroups,
           sharingKonfig.enabled
         )
       ) {
         return false;
       }
-      if (istCoachOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
-        return (n.visibility ?? 'ALL_PLAYERS') === coachFilterGruppe;
+      if (istStaffOderAdmin && sharingKonfig.enabled && coachFilterGruppe !== 'ALL') {
+        return (n.visibility ?? 'ALL_MEMBERS') === coachFilterGruppe;
       }
       return true;
     });
   }, [
     notizen,
-    istCoachOderAdmin,
-    ctx.aktiveTeamAnsicht,
-    ctx.userUnits,
+    istStaffOderAdmin,
+    ctx.effektiveTeamRolle,
+    ctx.userGroups,
     sharingKonfig.enabled,
     coachFilterGruppe,
   ]);
@@ -531,13 +545,13 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           angleCode: aktiverWinkel,
           frameIndex,
           elements: gesamtElemente,
-          authorUuid: ctx.benutzer.uuid,
-          authorName: ctx.benutzer.vollerName,
+          authorUuid: ctx.user.uuid,
+          authorName: ctx.user.vollerName,
           updatedAt: new Date().toISOString(),
         },
       ];
     });
-    await videoApi.speichereTelestration(ctx.team.id, aktivesPlay.id, {
+    await api.speichereTelestration(aktivesPlay.id, {
       reelId: aktivesReel.id,
       angleCode: aktiverWinkel,
       frameIndex,
@@ -616,9 +630,11 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const handleNotizAnlegen = async () => {
     if (!notizEntwurfText.trim() || !istCoachOderAdmin) return;
-    const zielVis: SichtbarkeitsStufe = sharingKonfig.enabled ? notizZielgruppe : 'ALL_PLAYERS';
-    const notizFarbe = sharingKonfig.enabled ? sharingKonfig.colorMap[zielVis] : farbe;
-    const res = await videoApi.erstelleNotiz(ctx.team.id, aktivesPlay.id, {
+    const zielVis: SichtbarkeitsStufe = sharingKonfig.enabled ? notizZielgruppe : 'ALL_MEMBERS';
+    const notizFarbe = sharingKonfig.enabled
+      ? holeFarbeFuerSichtbarkeit(sharingKonfig, zielVis)
+      : farbe;
+    const res = await api.erstelleNotiz(aktivesPlay.id, {
       reelId: aktivesReel.id,
       playId: aktivesPlay.id,
       angleCode: aktiverWinkel,
@@ -642,8 +658,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         cornerPosition: userPrefs?.defaultCorner ?? 'top-right',
         visibility: zielVis,
         color: notizFarbe,
-        authorUuid: ctx.benutzer.uuid,
-        authorName: ctx.benutzer.vollerName,
+        authorUuid: ctx.user.uuid,
+        authorName: ctx.user.vollerName,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
@@ -655,33 +671,50 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     note: CoachNotiz,
     patch: Partial<Pick<CoachNotiz, 'text' | 'status' | 'cornerPosition' | 'visibility' | 'color'>>
   ) => {
+    if (!istCoachOderAdmin) return;
     aktualisiereNotizenLokal((alt) =>
       alt.map((n) => (n.id === note.id ? { ...n, ...patch } : n))
     );
-    await videoApi.aktualisiereNotiz(ctx.team.id, note.id, patch);
+    await api.aktualisiereNotiz(note.id, patch);
   };
 
   const handleNotizLoeschen = async (noteId: string) => {
+    if (!istCoachOderAdmin) return;
     aktualisiereNotizenLokal((alt) => alt.filter((n) => n.id !== noteId));
-    await videoApi.loescheNotiz(ctx.team.id, noteId);
+    await api.loescheNotiz(noteId);
   };
 
   const handlePlayUpdate = async (playId: string, breakdown: PlayBreakdownDaten) => {
+    if (!istCoachOderAdmin) return;
     aktualisierePlaysLokal((alt) =>
       alt.map((p) => (p.id === playId ? { ...p, breakdown } : p))
     );
-    await videoApi.aktualisierePlay(ctx.team.id, playId, { breakdown });
+    await api.aktualisierePlay(playId, { breakdown });
   };
 
   const handleSchemaLearn = async (nextSchema: typeof schema) => {
+    if (!istCoachOderAdmin) return;
     setTeamSchema(nextSchema);
-    await videoApi.speichereSchema(ctx.team.id, nextSchema);
+    await api.speichereSchema(nextSchema);
   };
 
-  const gruppenLabel = (vis?: SichtbarkeitsStufe): string => {
-    const gefunden = ANMERKUNGS_ZIELGRUPPEN.find((g) => g.id === (vis ?? 'ALL_PLAYERS'));
-    return gefunden ? (ctx.locale === 'en' ? gefunden.kurzEn : gefunden.kurzDe) : 'Alle';
+  const handleHudlCsvImport = async (ergebnis: HudlCsvImportErgebnis) => {
+    const res = await api.importiereHudlCsvBulk(aktivesReel.id, {
+      playPatches: ergebnis.playPatches,
+      newCustomFields: ergebnis.newCustomFields,
+    });
+    if (res.addedFields > 0) {
+      const schemaRes = await api.holeSchema().catch(() => null);
+      if (schemaRes?.schema) {
+        setTeamSchema(schemaRes.schema);
+      }
+    }
+    await oeffneReel(aktivesReel.id);
+    setHudlCsvModalOffen(false);
   };
+
+  const gruppenLabel = (vis?: SichtbarkeitsStufe): string =>
+    holeLabelFuerSichtbarkeit(sharingKonfig, vis, ctx.locale);
 
   const vorherigesPlay =
     aktivesPlayIndex > 0 ? sichtbarePlays[aktivesPlayIndex - 1] : undefined;
@@ -692,12 +725,21 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <h1 className="text-lg font-bold text-sl-heading">{aktivesReel.title}</h1>
-          <div className="flex items-center gap-2 text-xs text-sl-muted video-tabular">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-sl-muted video-tabular">
             <span>Play #{aktivesPlay.playNumber}</span>
             <span aria-hidden="true">·</span>
             <span>Frame {aktuellerFrame}</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono">{formatiereFrameTimecode(aktuelleMs)}</span>
+            {aktivesReel.canEdit === false && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 text-sl-accent">
+                  <Lock className="h-3 w-3" aria-hidden="true" />
+                  Nur Lesen ({aktivesReel.sharedFromTeamName ?? 'Geteilt'})
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -711,7 +753,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               Playlist-Filter aufheben ({sichtbarePlays.length})
             </button>
           )}
-          {istCoachOderAdmin && sharingKonfig.enabled && (
+          {istStaffOderAdmin && sharingKonfig.enabled && (
             <select
               aria-label="Anmerkungen nach Zielgruppe filtern"
               value={coachFilterGruppe}
@@ -719,9 +761,9 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               className="rounded-lg border border-sl-border bg-sl-surface px-2.5 py-1.5 text-xs text-sl-primary focus:border-sl-accent focus:outline-none"
             >
               <option value="ALL">Anmerkungen: Alle Gruppen</option>
-              {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+              {zielgruppenOptionen.map((g) => (
                 <option key={g.id} value={g.id}>
-                  Nur {g.labelDe}
+                  Nur {g.label}
                 </option>
               ))}
             </select>
@@ -863,9 +905,9 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               elements={frameTelestration?.elements ?? []}
               werkzeug={istCoachOderAdmin ? werkzeug : 'select'}
               farbe={farbe}
-              visibility={sharingKonfig.enabled ? aktiveZielgruppe : 'ALL_PLAYERS'}
-              authorUuid={ctx.benutzer.uuid}
-              authorName={ctx.benutzer.vollerName}
+              visibility={sharingKonfig.enabled ? aktiveZielgruppe : 'ALL_MEMBERS'}
+              authorUuid={ctx.user.uuid}
+              authorName={ctx.user.vollerName}
               readOnly={!istCoachOderAdmin}
               selectedId={selectedElId}
               onSelect={setSelectedElId}
@@ -894,7 +936,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               const notizFarbe =
                 notiz.color ??
                 (sharingKonfig.enabled
-                  ? sharingKonfig.colorMap[notiz.visibility ?? 'ALL_PLAYERS']
+                  ? holeFarbeFuerSichtbarkeit(sharingKonfig, notiz.visibility)
                   : undefined);
               return (
                 <div
@@ -974,19 +1016,19 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                           </select>
                           {sharingKonfig.enabled && (
                             <select
-                              value={notiz.visibility ?? 'ALL_PLAYERS'}
+                              value={notiz.visibility ?? 'ALL_MEMBERS'}
                               onChange={(e) => {
                                 const vis = e.target.value as SichtbarkeitsStufe;
                                 handleNotizUpdate(notiz, {
                                   visibility: vis,
-                                  color: sharingKonfig.colorMap[vis],
+                                  color: holeFarbeFuerSichtbarkeit(sharingKonfig, vis),
                                 });
                               }}
                               className="rounded border border-sl-border bg-sl-surface px-1.5 py-0.5 text-[11px] text-sl-primary"
                             >
-                              {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+                              {zielgruppenOptionen.map((g) => (
                                 <option key={g.id} value={g.id}>
-                                  {g.kurzDe}
+                                  {g.kurz}
                                 </option>
                               ))}
                             </select>
@@ -1024,7 +1066,8 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 play={aktivesPlay}
                 vorherigesPlay={vorherigesPlay}
                 schema={schema}
-                teamRolle={ctx.aktiveTeamAnsicht}
+                teamRolle={ctx.effektiveTeamRolle}
+                readOnly={!istCoachOderAdmin}
                 erlaubteSpalten={aktivesReel.allowedFields}
                 hotkeyLabel={formatiereHotkeyAnzeige(hotkeys.toggleBreakdownOverlay)}
                 onClose={() => setBreakdownOverlayOffen(false)}
@@ -1070,14 +1113,14 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 <span className="mx-1 h-4 w-px bg-sl-border" aria-hidden="true" />
 
                 {sharingKonfig.enabled
-                  ? ANMERKUNGS_ZIELGRUPPEN.map((gruppe) => {
-                      const hex = sharingKonfig.colorMap[gruppe.id];
+                  ? zielgruppenOptionen.map((gruppe) => {
+                      const hex = gruppe.color;
                       const aktiv = aktiveZielgruppe === gruppe.id;
                       return (
                         <button
                           key={gruppe.id}
                           type="button"
-                          title={`Zielgruppe: ${gruppe.labelDe} (${hex})`}
+                          title={`Zielgruppe: ${gruppe.label} (${hex})`}
                           onClick={() => {
                             setAktiveZielgruppe(gruppe.id);
                             setNotizZielgruppe(gruppe.id);
@@ -1094,7 +1137,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                             style={{ backgroundColor: hex }}
                             aria-hidden="true"
                           />
-                          <span>{gruppe.kurzDe}</span>
+                          <span>{gruppe.kurz}</span>
                         </button>
                       );
                     })
@@ -1343,7 +1386,7 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
             <div className="flex items-center gap-1.5">
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: sharingKonfig.colorMap[notizZielgruppe] }}
+                style={{ backgroundColor: holeFarbeFuerSichtbarkeit(sharingKonfig, notizZielgruppe) }}
                 aria-hidden="true"
               />
               <select
@@ -1352,9 +1395,9 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                 onChange={(e) => setNotizZielgruppe(e.target.value as SichtbarkeitsStufe)}
                 className="rounded-md border border-sl-border bg-sl-canvas px-2 py-1 text-xs text-sl-heading focus:border-sl-accent focus:outline-none"
               >
-                {ANMERKUNGS_ZIELGRUPPEN.map((g) => (
+                {zielgruppenOptionen.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.labelDe}
+                    {g.label}
                   </option>
                 ))}
               </select>
@@ -1379,22 +1422,24 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         </div>
       )}
 
-      {/* Hudl Breakdown Grid inkl. Anmerkungs-Symbolen (#1) */}
+      {/* Hudl Breakdown Grid inkl. Anmerkungs-Symbolen (#1) & CSV-Import (#9) */}
       <BreakdownGrid
         plays={sichtbarePlays}
         aktivesPlayId={aktivesPlay.id}
         schema={schema}
-        teamRolle={ctx.aktiveTeamAnsicht}
+        teamRolle={ctx.effektiveTeamRolle}
+        readOnly={!istCoachOderAdmin}
         erlaubteSpalten={aktivesReel.allowedFields}
         anmerkungenProPlay={playAnmerkungen}
         onSelectPlay={handlePlayWechsel}
         onUpdatePlay={handlePlayUpdate}
+        onOpenHudlCsvImport={istCoachOderAdmin ? () => setHudlCsvModalOffen(true) : undefined}
         onAddPlay={
           istCoachOderAdmin
             ? async () => {
                 const nr =
                   aktivePlays.reduce((max, p) => Math.max(max, p.playNumber), 0) + 1;
-                const res = await videoApi.erstellePlay(ctx.team.id, aktivesReel.id, {
+                const res = await api.erstellePlay(aktivesReel.id, {
                   playNumber: nr,
                   breakdown: { odk: 'O', play_number: nr },
                 });
@@ -1416,12 +1461,27 @@ export function FilmRoomView({ ctx }: { ctx: PluginLaufzeitKontext }) {
           istCoachOderAdmin
             ? async (playId) => {
                 aktualisierePlaysLokal((alt) => alt.filter((p) => p.id !== playId));
-                await videoApi.loeschePlay(ctx.team.id, playId);
+                await api.loeschePlay(playId);
               }
             : undefined
         }
         onSchemaLearn={handleSchemaLearn}
       />
+
+      {hudlCsvModalOffen && istCoachOderAdmin && (
+        <HudlCsvImportDialog
+          variant="modal"
+          locale={ctx.locale}
+          schema={schema}
+          zielPlays={aktivePlays.map((p) => ({
+            id: p.id,
+            playNumber: p.playNumber,
+            breakdown: p.breakdown,
+          }))}
+          onImportBestaetigen={handleHudlCsvImport}
+          onSchliessen={() => setHudlCsvModalOffen(false)}
+        />
+      )}
     </section>
   );
 }

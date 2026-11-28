@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { TeamRolle } from '@sidelineos/plugin-sdk';
 import { SlidersHorizontal, X } from 'lucide-react';
+import { istStaffOderAdminRolle } from '../services/annotationVisibility';
 import {
   berechneGainLoss,
   berechneNeueFeldposition,
@@ -17,7 +18,8 @@ interface BreakdownOverlayProps {
   play: PlayEintrag;
   vorherigesPlay?: PlayEintrag;
   schema: TeamTaggingSchema;
-  teamRolle: TeamRolle;
+  teamRolle: TeamRolle | null;
+  readOnly?: boolean;
   erlaubteSpalten?: string[] | null;
   hotkeyLabel: string;
   onClose: () => void;
@@ -34,13 +36,14 @@ export function BreakdownOverlay({
   vorherigesPlay,
   schema,
   teamRolle,
+  readOnly = false,
   erlaubteSpalten,
   hotkeyLabel,
   onClose,
   onUpdatePlay,
   onSchemaLearn,
 }: BreakdownOverlayProps) {
-  const istCoachOderAdmin = teamRolle === 'COACH' || teamRolle === 'TEAM_ADMIN';
+  const istCoachOderAdmin = !readOnly && istStaffOderAdminRolle(teamRolle);
   const feldRefs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([]);
 
   const spalten = useMemo(

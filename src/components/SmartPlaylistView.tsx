@@ -1,16 +1,15 @@
 import { useMemo, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
-import { createPluginTranslator } from '@sidelineos/plugin-sdk';
 import { ListFilter, MessageSquare, Pencil, Play, Plus, Save, Trash2 } from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
-import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
+import { erstelleVideoTranslator } from '../i18n/woerterbuch';
 import {
   bereinigeAnmerkungsKonfig,
   filtereTelestrationElementeFuerBenutzer,
   istAnmerkungFuerBenutzerSichtbar,
+  istStaffOderAdminRolle,
   sammlePlayAnmerkungsZaehler,
 } from '../services/annotationVisibility';
-import { videoApi } from '../services/apiClient';
 import { filterePlaysNachRegeln } from '../services/smartPlaylistEngine';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
 import type { PlaylistFilterOperator, PlaylistFilterRegel, SmartPlaylist } from '../types/video';
@@ -27,19 +26,24 @@ const OPERATOREN: Array<{ id: PlaylistFilterOperator; label: string }> = [
 ];
 
 export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
-  const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
+  const t = erstelleVideoTranslator(ctx.locale);
   const {
+    api,
     aktivesReel,
     aktivePlays,
     telestrations,
     notizen,
     teamSchema,
     playlists,
+    seasons,
+    gewaehlteSaison,
     setPlaylists,
     setAktiverPlaylistFilterIds,
   } = useVideoAnalysis();
 
-  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team.id);
+  const teamId = ctx.team?.id ?? 'team';
+  const istStaffOderAdmin = istStaffOderAdminRolle(ctx.effektiveTeamRolle);
+  const schema = teamSchema ?? erstelleStandardTeamSchema(teamId);
   const aktiveFelder = schema.fields.filter((f) => f.aktiv);
   const sharingKonfig = useMemo(
     () => bereinigeAnmerkungsKonfig(schema.annotationSharing),
@@ -63,26 +67,24 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
         ...tel,
         elements: filtereTelestrationElementeFuerBenutzer(
           tel.elements,
-          ctx.aktiveTeamAnsicht,
-          ctx.userUnits,
+          ctx.effektiveTeamRolle,
+          ctx.userGroups,
           sharingKonfig.enabled
         ),
       }))
       .filter((tel) => tel.elements.length > 0);
     const sichtbareNotizen = notizen.filter(
       (n) =>
-        (ctx.aktiveTeamAnsicht === 'COACH' ||
-          ctx.aktiveTeamAnsicht === 'TEAM_ADMIN' ||
-          n.status === 'PUBLISHED') &&
+        (istStaffOderAdmin || n.status === 'PUBLISHED') &&
         istAnmerkungFuerBenutzerSichtbar(
           n.visibility,
-          ctx.aktiveTeamAnsicht,
-          ctx.userUnits,
+          ctx.effektiveTeamRolle,
+          ctx.userGroups,
           sharingKonfig.enabled
         )
     );
     return sammlePlayAnmerkungsZaehler(sichtbareTel, sichtbareNotizen);
-  }, [telestrations, notizen, ctx.aktiveTeamAnsicht, ctx.userUnits, sharingKonfig.enabled]);
+  }, [telestrations, notizen, ctx.effektiveTeamRolle, ctx.userGroups, istStaffOderAdmin, sharingKonfig.enabled]);
 
   const handleRegelHinzufuegen = () => {
     setRegeln((alt) => [
@@ -96,26 +98,31 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
     ]);
   };
 
+  const aktiveSaisonName =
+    gewaehlteSaison !== 'ALL'
+      ? gewaehlteSaison
+      : seasons.find((s) => s.isActive)?.name ?? new Date().toISOString().slice(0, 4);
+
   const handlePlaylistSpeichern = async () => {
-    if (!name.trim()) return;
-    const res = await videoApi.erstellePlaylist(ctx.team.id, {
+    if (!name.trim() || ctx.isReadOnly) return;
+    const res = await api.erstellePlaylist({
       name: name.trim(),
       description: `${regeln.length} Filterregeln (${matchMode})`,
-      season: ctx.gewaehlteSaison === 'ALL' ? ctx.team.aktiveSaison : ctx.gewaehlteSaison,
+      season: aktiveSaisonName,
       matchMode,
       rules: regeln,
       playIds: trefferPlays.map((p) => p.id),
     });
     const neu: SmartPlaylist = {
       id: res.id,
-      teamId: ctx.team.id,
+      teamId,
       name: name.trim(),
       description: `${regeln.length} Filterregeln (${matchMode})`,
-      season: ctx.gewaehlteSaison === 'ALL' ? ctx.team.aktiveSaison : ctx.gewaehlteSaison,
+      season: aktiveSaisonName,
       matchMode,
       rules: regeln,
       playIds: trefferPlays.map((p) => p.id),
-      createdBy: ctx.benutzer.uuid,
+      createdBy: ctx.user.uuid,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -125,7 +132,7 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
 
   const handleImFilmRoomStarten = (ids: string[]) => {
     setAktiverPlaylistFilterIds(ids);
-    ctx.onTabWechseln('film-room');
+    ctx.navigateToView('film-room');
   };
 
   return (
@@ -256,8 +263,9 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
               />
               <button
                 type="button"
+                disabled={ctx.isReadOnly}
                 onClick={handlePlaylistSpeichern}
-                className="inline-flex items-center gap-1.5 rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong"
+                className="inline-flex items-center gap-1.5 rounded-md bg-sl-elevated px-3 py-1.5 text-xs font-medium text-sl-heading hover:bg-sl-border-strong disabled:opacity-45"
               >
                 <Save className="h-3.5 w-3.5" aria-hidden="true" />
                 Speichern
@@ -293,16 +301,18 @@ export function SmartPlaylistView({ ctx }: { ctx: PluginLaufzeitKontext }) {
                       {pl.rules.length} Regeln · {pl.playIds.length} Spielzüge
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await videoApi.loeschePlaylist(ctx.team.id, pl.id);
-                      setPlaylists(playlists.filter((p) => p.id !== pl.id));
-                    }}
-                    className="rounded p-1.5 text-sl-muted hover:text-sl-danger-text"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
+                  {!ctx.isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await api.loeschePlaylist(pl.id);
+                        setPlaylists(playlists.filter((p) => p.id !== pl.id));
+                      }}
+                      className="rounded p-1.5 text-sl-muted hover:text-sl-danger-text"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

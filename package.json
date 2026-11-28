@@ -1,8 +1,8 @@
 {
   "name": "sidelineos-video",
   "private": true,
-  "version": "0.2.0",
-  "description": "Eigenständiges Videoanalyse-Plugin für SidelineOS-Core (dev)",
+  "version": "2.0.0",
+  "description": "Eigenständiges Videoanalyse-Plugin für SidelineOS-Core v0.2.0 (SDK v2.0)",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -19,7 +19,6 @@
     "clean": "rm -rf dist build-release .bundle"
   },
   "peerDependencies": {
-    "@sidelineos/plugin-sdk": "^1.0.0",
     "lucide-react": ">=0.546.0",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0"

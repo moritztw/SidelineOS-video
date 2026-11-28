@@ -29,6 +29,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            build-release/sideline-plugin-v1.tar.gz
-            build-release/sideline-plugin-v1.tar.gz.sha256
-            build-release/plugin.manifest.json
+            build-release/video-analysis.tar.gz
+            build-release/video-analysis.tar.gz.sha256
+            build-release/plugin.json

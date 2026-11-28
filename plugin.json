@@ -1,0 +1,103 @@
+{
+  "id": "video-analysis",
+  "name": "Videoanalyse",
+  "kurzbeschreibung": "Film Room, 25-fps-Telestration, Hudl-Breakdown & CSV-Import, Sync-Editor, Smart Playlists sowie vereinsweite Videoverwaltung.",
+  "version": "2.0.0",
+  "sdkVersion": "2.0",
+  "minCoreVersion": "0.2.0",
+  "author": "moritztw",
+  "repositoryUrl": "https://github.com/moritztw/SidelineOS-video",
+  "icon": "film",
+  "storagePrefix": "video",
+  "permissions": [
+    "db:plugin-schema",
+    "storage:team-rw",
+    "storage:club-rw",
+    "share:public-links",
+    "notifications:send",
+    "ui:account-panel",
+    "ui:club-panel",
+    "ui:system-panel"
+  ],
+  "navigation": {
+    "surface": "app",
+    "scopes": ["team", "club"],
+    "sidebarGroups": [
+      {
+        "id": "medien",
+        "label": "Videothek",
+        "items": [
+          {
+            "id": "library",
+            "label": "Alle Videos",
+            "routeSegment": "library"
+          },
+          {
+            "id": "film-room",
+            "label": "Film Room",
+            "routeSegment": "film-room"
+          },
+          {
+            "id": "playlists",
+            "label": "Cutups & Playlists",
+            "routeSegment": "playlists"
+          }
+        ]
+      },
+      {
+        "id": "produktion",
+        "label": "Produktion",
+        "items": [
+          {
+            "id": "sync-cut",
+            "label": "Sync & Fast-Cut",
+            "routeSegment": "sync-cut",
+            "requiredTeamRoles": ["TEAM_ADMIN", "STAFF"]
+          },
+          {
+            "id": "upload",
+            "label": "Video importieren",
+            "routeSegment": "upload",
+            "requiredTeamRoles": ["TEAM_ADMIN", "STAFF"]
+          }
+        ]
+      },
+      {
+        "id": "verein",
+        "label": "Verein",
+        "items": [
+          {
+            "id": "club-library",
+            "label": "Vereins-Mediathek",
+            "routeSegment": "club-library",
+            "requiredClubRoles": ["CLUB_ADMIN"]
+          }
+        ]
+      }
+    ],
+    "settingsPanels": [
+      {
+        "id": "video-user",
+        "target": "account",
+        "group": "Videoanalyse",
+        "label": "Video & Hotkeys",
+        "routeSegment": "video-hotkeys"
+      },
+      {
+        "id": "video-club",
+        "target": "club",
+        "group": "Videoanalyse",
+        "label": "Schema, Gruppen & Saisons",
+        "routeSegment": "video-schema",
+        "requiredClubRoles": ["CLUB_ADMIN"]
+      },
+      {
+        "id": "video-system",
+        "target": "system",
+        "group": "Videoanalyse",
+        "label": "Video-Speicher",
+        "routeSegment": "video-storage"
+      }
+    ]
+  }
+}

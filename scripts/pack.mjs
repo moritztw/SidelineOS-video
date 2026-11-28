@@ -5,11 +5,10 @@ import zlib from 'node:zlib';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const RELEASE_DIR = path.join(ROOT_DIR, 'build-release');
-const BUNDLE_NAME = 'sideline-plugin-v1.tar.gz';
 
 /**
  * Erzeugt ein USTAR-konformes .tar.gz-Archiv ohne externe Abhängigkeiten,
- * exakt kompatibel zu `entpackeTarGzSicher` in SidelineOS-Core.
+ * exakt kompatibel zu `entpackeTarGzSicher` in SidelineOS-Core (SDK v2.0).
  */
 export function erzeugeTarGzBuffer(dateien) {
   const bloecke = [];
@@ -69,7 +68,7 @@ async function sammleDateien(dir, relPrefix, ziel) {
 }
 
 async function packPlugin() {
-  const manifestPath = path.join(ROOT_DIR, 'plugin.manifest.json');
+  const manifestPath = path.join(ROOT_DIR, 'plugin.json');
   const distDir = path.join(ROOT_DIR, 'dist');
   const clientJsPath = path.join(distDir, 'client.js');
   const serverJsPath = path.join(distDir, 'server.js');
@@ -78,8 +77,16 @@ async function packPlugin() {
   await fs.access(clientJsPath);
   await fs.access(serverJsPath);
 
+  const manifestRaw = await fs.readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestRaw);
+  const pluginId = String(manifest.id || '').trim();
+  if (!pluginId || !/^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/.test(pluginId)) {
+    throw new Error(`Ungültige plugin.id in plugin.json: ${pluginId}`);
+  }
+  const bundleName = `${pluginId}.tar.gz`;
+
   const dateien = {
-    'plugin.manifest.json': await fs.readFile(manifestPath),
+    'plugin.json': Buffer.from(manifestRaw, 'utf8'),
   };
 
   await sammleDateien(distDir, 'dist', dateien);
@@ -99,15 +106,15 @@ async function packPlugin() {
 
   await fs.rm(RELEASE_DIR, { recursive: true, force: true });
   await fs.mkdir(RELEASE_DIR, { recursive: true });
-  await fs.writeFile(path.join(RELEASE_DIR, BUNDLE_NAME), tarGzBuffer);
+  await fs.writeFile(path.join(RELEASE_DIR, bundleName), tarGzBuffer);
   await fs.writeFile(
-    path.join(RELEASE_DIR, `${BUNDLE_NAME}.sha256`),
-    `${sha256}  ${BUNDLE_NAME}\n`,
+    path.join(RELEASE_DIR, `${bundleName}.sha256`),
+    `${sha256}  ${bundleName}\n`,
     'utf8'
   );
-  await fs.copyFile(manifestPath, path.join(RELEASE_DIR, 'plugin.manifest.json'));
+  await fs.copyFile(manifestPath, path.join(RELEASE_DIR, 'plugin.json'));
 
-  console.log(`Release-Paket erstellt: build-release/${BUNDLE_NAME} (sha256: ${sha256})`);
+  console.log(`Release-Paket erstellt: build-release/${bundleName} (sha256: ${sha256})`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

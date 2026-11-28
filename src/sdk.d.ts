@@ -4,83 +4,93 @@ declare module '*.sql' {
 }
 
 declare module '@sidelineos/plugin-sdk' {
-  import type { ComponentType, ReactNode } from 'react';
+  import type { ComponentType } from 'react';
 
   export type UnterstuetzteSprache = 'de' | 'en';
-  export type SprachPaket = Record<string, string>;
-  export type SprachWoerterbuecher = {
-    de: SprachPaket;
-  } & Partial<Record<UnterstuetzteSprache, SprachPaket>>;
-
-  export type TeamRolle = 'TEAM_ADMIN' | 'COACH' | 'PLAYER';
-  export type SpielerUnit = 'OFFENSE' | 'DEFENSE' | 'SPECIAL_TEAMS';
   export type PluginId = string;
+  export type ClubRolle = 'CLUB_ADMIN' | 'CLUB_MEMBER';
+  export type TeamRolle = 'TEAM_ADMIN' | 'STAFF' | 'MEMBER';
+  export type MitgliedschaftStatus = 'ACTIVE' | 'PENDING' | 'SUSPENDED';
+  export type TeamStatus = 'ACTIVE' | 'ARCHIVED';
+  export type ScopeTyp = 'club' | 'team';
+  export type NotificationPrioritaet = 'info' | 'warning' | 'urgent';
 
-  export type CoreBereich =
-    | 'hub'
-    | 'settings-hub'
-    | 'modul'
-    | 'settings'
-    | 'team-settings'
-    | 'sysadmin';
-
-  export type AppRouteModus =
-    | { art: 'app' }
-    | { art: 'login' }
-    | { art: 'invite'; token: string }
-    | { art: 'share'; token: string };
-
-  export interface ProfilCustomFeld {
-    key: string;
-    label: string;
-    typ: 'text' | 'number' | 'select';
-    pflicht?: boolean;
-    optionen?: string[];
-  }
+  export const SIDELINE_SDK_VERSION: '2.0';
+  export type PluginSdkVersion = typeof SIDELINE_SDK_VERSION;
 
   export interface BenutzerKonto {
     uuid: string;
     benutzername: string;
     vollerName: string;
     email: string;
-    telefon?: string;
-    trikotNummer?: string;
-    position?: string;
     istSysadmin: boolean;
-    erstelltAm: string;
-    preferredLocale?: UnterstuetzteSprache;
+    preferredLocale: UnterstuetzteSprache;
     preferredTheme?: string;
-    customProfilWerte: Record<string, string>;
+    metadata: Record<string, unknown>;
+    erstelltAm: string;
   }
 
-  export interface S3Konfiguration {
-    endpoint: string;
-    region: string;
-    bucket: string;
-    accessKey: string;
-    forcePathStyle: boolean;
-    cleanupRetentionDays?: number;
-    hatSecretKey?: boolean;
-    konfiguriert?: boolean;
+  export interface ClubSpeicherStatus {
+    nodeId: string;
+    quotaBytes: number | null;
+    usedBytes: number;
+    softLimitPercent: number;
+    auslastungProzent: number | null;
+    softLimitErreicht: boolean;
+    hardLimitErreicht: boolean;
+  }
+
+  export interface ClubKontext {
+    id: string;
+    slug: string;
+    name: string;
+    speicher: ClubSpeicherStatus;
+    metadata: Record<string, unknown>;
+    erstelltAm: string;
   }
 
   export interface TeamKontext {
     id: string;
+    clubId: string;
+    slug: string;
     name: string;
-    kurzname: string;
-    aktiveSaison: string;
-    saisons: string[];
-    primaerFarbe?: string;
-    aktivierteModule: PluginId[];
-    customProfilFelder: ProfilCustomFeld[];
+    status: TeamStatus;
+    akzentFarbe: string;
+    metadata: Record<string, unknown>;
+    erstelltAm: string;
   }
 
-  export interface BrandKonfiguration {
-    produktName: string;
-    coreName: string;
-    kurzName: string;
-    sdkScope: '@sidelineos/plugin-sdk';
-    paketFormat: 'sideline-plugin-v1';
+  export interface ClubMitgliedschaft {
+    id: string;
+    userUuid: string;
+    clubId: string;
+    rolle: ClubRolle;
+    status: MitgliedschaftStatus;
+    beigetretenAm: string;
+  }
+
+  export interface TeamMitgliedschaft {
+    id: string;
+    userUuid: string;
+    teamId: string;
+    rolle: TeamRolle;
+    groups: string[];
+    status: MitgliedschaftStatus;
+    beigetretenAm: string;
+  }
+
+  export interface EinladungEintrag {
+    id: string;
+    clubId: string;
+    teamId: string | null;
+    clubRolle: ClubRolle;
+    teamRolle: TeamRolle;
+    groups: string[];
+    zielEmail?: string;
+    bestaetigungErforderlich: boolean;
+    gueltigBis: string;
+    aktiv: boolean;
+    erstelltAm: string;
   }
 
   export type SidelineCssToken =
@@ -104,19 +114,6 @@ declare module '@sidelineos/plugin-sdk' {
     | '--sl-success-text'
     | '--sl-warning-text';
 
-  export interface SidelineCssTokenDefinition {
-    cssVar: `--sl-${string}`;
-    tailwindColor?: string;
-    defaultValue: string;
-    beschreibung: string;
-  }
-
-  export interface TeamAkzentTokens {
-    '--sl-accent': string;
-    '--sl-accent-hover': string;
-    '--sl-accent-contrast': '#0B0E11' | '#FFFFFF';
-  }
-
   export interface PluginThemePreset {
     id: string;
     name: string;
@@ -126,46 +123,81 @@ declare module '@sidelineos/plugin-sdk' {
     overrideTeamAccent?: boolean;
   }
 
-  export interface VerfuegbaresThemeEintrag {
-    themeRef: string;
-    pluginId: string | null;
-    pluginName: string | null;
-    preset: PluginThemePreset;
-  }
-
-  export interface AufgeloestesThemeErgebnis {
-    themeRef: string;
-    quelle: 'user' | 'instance' | 'core';
-    pluginId: string | null;
-    pluginName: string | null;
-    preset: PluginThemePreset;
-  }
-
-  export type GeparsteThemeRef =
-    | { typ: 'core' }
-    | { typ: 'plugin'; pluginId: string; themeId: string };
-
-  export type PluginPermission =
-    | 'team:read'
-    | 'team:roster-read'
-    | 's3:team-rw'
-    | 's3:cleanup-queue'
-    | 'db:plugin-tables'
-    | 'share:public-links'
-    | 'notifications:send'
-    | 'notifications:channel';
-
   export type PluginIconName =
     | 'film'
     | 'book-open'
     | 'clipboard-check'
     | 'layers'
-    | 'puzzle';
+    | 'puzzle'
+    | 'users'
+    | 'hard-drive'
+    | 'mail'
+    | 'store'
+    | 'git-branch'
+    | 'shield';
 
-  export interface PluginSettingsAnker {
+  export type StandardPluginPermission =
+    | 'db:plugin-schema'
+    | 'storage:team-rw'
+    | 'storage:club-rw'
+    | 'notifications:send'
+    | 'notifications:channel'
+    | 'share:public-links'
+    | 'theme:presets'
+    | 'ui:account-panel'
+    | 'ui:club-panel'
+    | 'ui:system-panel';
+
+  export type PrivilegiertePluginPermission =
+    | 'storage:provider'
+    | 'core:org-manage'
+    | 'core:users-manage'
+    | 'core:plugins-manage'
+    | 'core:storage-quota-manage'
+    | 'core:storage-nodes-manage'
+    | 'dev:git-install';
+
+  export type PluginPermission = StandardPluginPermission | PrivilegiertePluginPermission;
+
+  export const PRIVILEGIERTE_CAPABILITIES: readonly PrivilegiertePluginPermission[];
+  export function istPrivilegierteCapability(
+    permission: PluginPermission
+  ): permission is PrivilegiertePluginPermission;
+
+  export type PluginSurfaceTyp = 'app' | 'headless' | 'system';
+  export type PluginScopeEbene = 'club' | 'team' | 'global';
+  export type SettingsPanelZiel = 'account' | 'club' | 'system';
+
+  export interface PluginSidebarItem {
     id: string;
     label: string;
-    badge?: number;
+    routeSegment: string;
+    requiredClubRoles?: ClubRolle[];
+    requiredTeamRoles?: TeamRolle[];
+    badgeKey?: string;
+  }
+
+  export interface PluginSidebarGroup {
+    id: string;
+    label: string;
+    items: PluginSidebarItem[];
+  }
+
+  export interface PluginSettingsPanelDef {
+    id: string;
+    target: SettingsPanelZiel;
+    group: string;
+    label: string;
+    routeSegment: string;
+    requiredClubRoles?: ClubRolle[];
+    requiredTeamRoles?: TeamRolle[];
+  }
+
+  export interface PluginNavigationManifest {
+    surface: PluginSurfaceTyp;
+    scopes: PluginScopeEbene[];
+    sidebarGroups?: PluginSidebarGroup[];
+    settingsPanels?: PluginSettingsPanelDef[];
   }
 
   export interface PluginManifest {
@@ -173,96 +205,42 @@ declare module '@sidelineos/plugin-sdk' {
     name: string;
     kurzbeschreibung: string;
     version: string;
-    sdkVersion: '1.0' | (string & {});
-    minCoreVersion?: string;
-    maxCoreVersion?: string;
-    autor: string;
-    repositoryUrl: string;
+    sdkVersion: PluginSdkVersion;
+    minCoreVersion: string;
     icon: PluginIconName;
-    status: 'AKTIV' | 'VORSCHAU';
-    standardAktiviert: boolean;
-    hideHubTile?: boolean;
     permissions: PluginPermission[];
-    dbPrefix: string;
-    s3Prefix?: string;
-    settingsAnker: {
-      user?: PluginSettingsAnker[];
-      team?: PluginSettingsAnker[];
-      sysadmin?: PluginSettingsAnker[];
-    };
+    navigation: PluginNavigationManifest;
+    storagePrefix?: string;
+    repositoryUrl?: string;
+    author?: string;
     themes?: PluginThemePreset[];
   }
 
-  export interface PluginTab {
-    id: string;
-    label: string;
-  }
-
-  export interface PluginLaufzeitKontext {
-    team: TeamKontext;
-    aktiveTeamAnsicht: TeamRolle;
-    userUnits?: SpielerUnit[];
-    gewaehlteSaison: string;
-    benutzer: BenutzerKonto;
-    locale: string;
-    aktuellerTab: string;
-    onTabWechseln: (tabId: string) => void;
-    onTeamSettingsOeffnen: () => void;
-    onZurueckZurStartseite: () => void;
-    onPublicShareOeffnen?: (token: string) => void;
-  }
-
-  export interface PluginSettingsKontext {
-    team: TeamKontext;
-    benutzer: BenutzerKonto;
-    aktiveTeamAnsicht: TeamRolle | null;
-    s3Konfig: S3Konfiguration;
-    locale: string;
-  }
-
-  export interface PluginProviderKontext {
-    pluginId: PluginId;
-    team: TeamKontext | null;
-    aktiveTeamAnsicht: TeamRolle | null;
-    gewaehlteSaison: string | null;
-    benutzer: BenutzerKonto | null;
-    locale: string;
-    bereich: CoreBereich;
-    routeArt: AppRouteModus['art'];
-    istGlobalAktiv: boolean;
-    istFuerAktivesTeamAktiv: boolean;
-  }
-
-  export interface PluginProviderProps {
-    children: ReactNode;
-    ctx?: PluginProviderKontext;
-  }
-
-  export interface PluginDbScope {
-    readonly schemaName: string;
-    query<T = Record<string, unknown>>(
-      sql: string,
-      params?: unknown[]
-    ): Promise<{ rows: T[]; rowCount: number }>;
-  }
-
-  export interface S3MultipartPartRef {
+  export interface StorageMultipartPartRef {
     partNumber: number;
     etag: string;
   }
 
-  export interface PluginS3Scope {
+  export interface StoragePresignUploadParams {
+    objectPath: string;
+    contentType?: string;
+    fileSizeBytes?: number;
+    expiresInSeconds?: number;
+  }
+
+  export interface StoragePresignDownloadParams {
+    objectPath: string;
+    expiresInSeconds?: number;
+  }
+
+  export interface PluginStorageScope {
     readonly prefix: string;
-    getSignedUploadUrl(params: {
-      objectPath: string;
-      contentType?: string;
-      fileSizeBytes?: number;
-      expiresInSeconds?: number;
-    }): Promise<{ url: string; key: string; expiresIn: number }>;
-    getSignedDownloadUrl(params: {
-      objectPath: string;
-      expiresInSeconds?: number;
-    }): Promise<{ url: string; key: string; expiresIn: number }>;
+    getSignedUploadUrl(
+      params: StoragePresignUploadParams
+    ): Promise<{ url: string; key: string; expiresIn: number }>;
+    getSignedDownloadUrl(
+      params: StoragePresignDownloadParams
+    ): Promise<{ url: string; key: string; expiresIn: number }>;
     initiateMultipartUpload(params: {
       objectPath: string;
       contentType?: string;
@@ -277,27 +255,59 @@ declare module '@sidelineos/plugin-sdk' {
     completeMultipartUpload(params: {
       objectPath: string;
       uploadId: string;
-      parts: S3MultipartPartRef[];
+      parts: StorageMultipartPartRef[];
     }): Promise<{ key: string; etag?: string; location?: string }>;
     abortMultipartUpload(params: { objectPath: string; uploadId: string }): Promise<void>;
-    deleteObject(objectPath: string): Promise<void>;
+    deleteObject(objectPath: string, estimatedBytes?: number): Promise<void>;
   }
 
-  export interface PluginCleanupQueueScope {
-    enqueueOrphanedObjects(objectPaths: string[], reason?: string): Promise<{ queued: number }>;
+  export interface StorageProviderAdapter {
+    readonly providerId: string;
+    readonly label: string;
+    presignUpload(params: {
+      nodeId: string;
+      key: string;
+      contentType?: string;
+      expiresInSeconds: number;
+    }): Promise<{ url: string; key: string; expiresIn: number }>;
+    presignDownload(params: {
+      nodeId: string;
+      key: string;
+      expiresInSeconds: number;
+    }): Promise<{ url: string; key: string; expiresIn: number }>;
+    initiateMultipartUpload(params: {
+      nodeId: string;
+      key: string;
+      contentType?: string;
+    }): Promise<{ uploadId: string; key: string }>;
+    presignMultipartPart(params: {
+      nodeId: string;
+      key: string;
+      uploadId: string;
+      partNumber: number;
+      expiresInSeconds: number;
+    }): Promise<{ url: string; key: string; partNumber: number; expiresIn: number }>;
+    completeMultipartUpload(params: {
+      nodeId: string;
+      key: string;
+      uploadId: string;
+      parts: StorageMultipartPartRef[];
+    }): Promise<{ key: string; etag?: string; location?: string }>;
+    abortMultipartUpload(params: {
+      nodeId: string;
+      key: string;
+      uploadId: string;
+    }): Promise<void>;
+    deleteObject(params: { nodeId: string; key: string }): Promise<void>;
+    healthCheck?(nodeId?: string): Promise<{ ok: boolean; nachricht: string }>;
   }
 
-  export type NotificationPrioritaet = 'info' | 'warning' | 'urgent';
-
-  export interface PluginNotificationChannel {
-    id: string;
-    label: string;
-    description?: string;
-  }
-
-  export interface PluginNotificationChannelInfo extends PluginNotificationChannel {
-    providerPluginId: string;
-    aktiv: boolean;
+  export interface NotificationEmpfaengerInfo {
+    uuid: string;
+    vollerName: string;
+    benutzername: string;
+    email: string;
+    preferredLocale: UnterstuetzteSprache;
   }
 
   export interface NotificationPayload {
@@ -311,13 +321,6 @@ declare module '@sidelineos/plugin-sdk' {
     metadata?: Record<string, unknown>;
   }
 
-  export interface NotificationEmpfaengerInfo {
-    uuid: string;
-    vollerName: string;
-    benutzername: string;
-    preferredLocale: string;
-  }
-
   export interface NotificationDispatchEvent {
     eventType: string;
     title: string;
@@ -325,19 +328,11 @@ declare module '@sidelineos/plugin-sdk' {
     linkPath?: string;
     priority: NotificationPrioritaet;
     sourcePluginId: string;
+    clubId?: string;
     teamId?: string;
-    teamName?: string;
     recipients: NotificationEmpfaengerInfo[];
     metadata: Record<string, unknown>;
     createdAt: string;
-  }
-
-  export interface PluginNotificationChannelKontext {
-    readonly pluginId: PluginId;
-    readonly manifest: PluginManifest;
-    readonly channelId: string;
-    readonly db: PluginDbScope;
-    readonly team?: TeamKontext;
   }
 
   export interface NotificationChannelErgebnis {
@@ -354,29 +349,237 @@ declare module '@sidelineos/plugin-sdk' {
     channelResults: NotificationChannelErgebnis[];
   }
 
+  export interface PluginNotificationChannelDef {
+    id: string;
+    label: string;
+    description?: string;
+    explicitOnly?: boolean;
+  }
+
+  export interface PluginNotificationChannelInfo {
+    id: string;
+    label: string;
+    description?: string;
+    providerPluginId: string;
+    aktiv: boolean;
+  }
+
   export interface PluginNotificationScope {
     send(payload: NotificationPayload): Promise<NotificationDispatchErgebnis>;
     listChannels(): Promise<PluginNotificationChannelInfo[]>;
   }
 
-  export interface PluginScopeItem {
-    id: string;
-    title: string;
-    season?: string;
-    updatedAt: string;
-    assetKeys?: string[];
+  export interface PluginCoreOrgScope {
+    listClubs(): Promise<ClubKontext[]>;
+    createClub(input: {
+      slug: string;
+      name: string;
+      metadata?: Record<string, unknown>;
+    }): Promise<ClubKontext>;
+    updateClub(
+      clubId: string,
+      patch: { name?: string; metadata?: Record<string, unknown> }
+    ): Promise<ClubKontext | null>;
+    listTeams(clubId: string, optionen?: { includeArchived?: boolean }): Promise<TeamKontext[]>;
+    createTeam(input: {
+      clubId: string;
+      slug: string;
+      name: string;
+      akzentFarbe?: string;
+      metadata?: Record<string, unknown>;
+    }): Promise<TeamKontext>;
+    updateTeam(
+      teamId: string,
+      patch: { name?: string; akzentFarbe?: string; metadata?: Record<string, unknown> }
+    ): Promise<TeamKontext | null>;
+    setTeamStatus(teamId: string, status: TeamStatus): Promise<TeamKontext | null>;
+    listClubMembers(clubId: string): Promise<Array<ClubMitgliedschaft & { user: BenutzerKonto }>>;
+    upsertClubMembership(input: {
+      userUuid: string;
+      clubId: string;
+      rolle: ClubRolle;
+      status?: 'ACTIVE' | 'PENDING' | 'SUSPENDED';
+    }): Promise<ClubMitgliedschaft>;
+    listTeamMembers(teamId: string): Promise<Array<TeamMitgliedschaft & { user: BenutzerKonto }>>;
+    upsertTeamMembership(input: {
+      userUuid: string;
+      teamId: string;
+      rolle: TeamRolle;
+      groups?: string[];
+      status?: 'ACTIVE' | 'PENDING' | 'SUSPENDED';
+    }): Promise<TeamMitgliedschaft>;
+    createInvitation(input: {
+      clubId: string;
+      teamId?: string | null;
+      clubRolle?: ClubRolle;
+      teamRolle?: TeamRolle;
+      groups?: string[];
+      zielEmail?: string;
+      bestaetigungErforderlich?: boolean;
+      gueltigBis: string;
+    }): Promise<{ einladung: EinladungEintrag; token: string; pfad: string }>;
+    listInvitations(clubId: string): Promise<EinladungEintrag[]>;
+    revokeInvitation(invitationId: string): Promise<boolean>;
   }
 
-  export interface PluginExportScopeResult {
-    schemaVersion: string;
+  export interface PluginCoreUsersScope {
+    listUsers(): Promise<BenutzerKonto[]>;
+    findUser(userUuid: string): Promise<BenutzerKonto | null>;
+    createUser(input: {
+      benutzername: string;
+      vollerName: string;
+      email: string;
+      passwort: string;
+      istSysadmin?: boolean;
+      metadata?: Record<string, unknown>;
+    }): Promise<BenutzerKonto>;
+    updateUser(
+      userUuid: string,
+      patch: {
+        vollerName?: string;
+        email?: string;
+        istSysadmin?: boolean;
+        metadata?: Record<string, unknown>;
+      }
+    ): Promise<BenutzerKonto | null>;
+  }
+
+  export interface PluginCorePluginsScope {
+    listInstalled(): Promise<
+      Array<{
+        pluginId: PluginId;
+        version: string;
+        enabledGlobally: boolean;
+        approvedCapabilities: PrivilegiertePluginPermission[];
+        manifest: PluginManifest;
+        lastError?: string | null;
+      }>
+    >;
+    setEnabledGlobally(pluginId: PluginId, enabled: boolean): Promise<boolean>;
+    setScopeModuleEnabled(
+      scopeTyp: ScopeTyp,
+      scopeId: string,
+      pluginId: PluginId,
+      enabled: boolean
+    ): Promise<void>;
+    listScopeModules(scopeTyp: ScopeTyp, scopeId: string): Promise<PluginId[]>;
+    installArchiveBuffer(
+      archiveBuffer: Uint8Array,
+      sourceLabel?: string
+    ): Promise<{ pluginId: PluginId; version: string }>;
+    installArchiveUrl(archiveUrl: string): Promise<{ pluginId: PluginId; version: string }>;
+    uninstall(pluginId: PluginId): Promise<boolean>;
+  }
+
+  export interface PluginCoreStorageQuotaScope {
+    getClubStorage(clubId: string): Promise<ClubSpeicherStatus | null>;
+    setClubQuota(
+      clubId: string,
+      params: { quotaBytes: number | null; softLimitPercent?: number }
+    ): Promise<ClubSpeicherStatus | null>;
+    reconcileClubUsage(clubId: string, exactUsedBytes: number): Promise<ClubSpeicherStatus | null>;
+  }
+
+  export interface PluginCoreStorageNodesScope {
+    getClubNode(clubId: string): Promise<string | null>;
+    assignClubNode(clubId: string, nodeId: string): Promise<ClubSpeicherStatus | null>;
+  }
+
+  export interface PluginCoreAdminScope {
+    org?: PluginCoreOrgScope;
+    users?: PluginCoreUsersScope;
+    plugins?: PluginCorePluginsScope;
+    storageQuota?: PluginCoreStorageQuotaScope;
+    storageNodes?: PluginCoreStorageNodesScope;
+  }
+
+  export interface PluginLaufzeitKontext {
     pluginId: PluginId;
-    items: PluginScopeItem[];
-    payload: unknown;
-    assetKeys: string[];
+    club: ClubKontext | null;
+    team: TeamKontext | null;
+    isReadOnly: boolean;
+    clubRolle: ClubRolle | null;
+    effektiveTeamRolle: TeamRolle | null;
+    user: BenutzerKonto;
+    userGroups: string[];
+    activeView: string;
+    navigateToView: (routeSegment: string) => void;
+    locale: UnterstuetzteSprache;
+    apiBaseUrl: string;
+    apiFetch: (subPfad: string, init?: RequestInit) => Promise<Response>;
+  }
+
+  export interface PluginAnsichtProps {
+    ctx: PluginLaufzeitKontext;
+  }
+
+  export interface PluginSettingsPanelProps {
+    panelId: string;
+    target: SettingsPanelZiel;
+    club: ClubKontext | null;
+    team: TeamKontext | null;
+    user: BenutzerKonto;
+    locale: UnterstuetzteSprache;
+    apiFetch: (subPfad: string, init?: RequestInit) => Promise<Response>;
+    onContextRefresh: () => Promise<void>;
+  }
+
+  export interface SidelinePlugin {
+    manifest: PluginManifest;
+    HauptAnsicht?: ComponentType<PluginAnsichtProps>;
+    OeffentlicheAnsicht?: ComponentType<{ token: string; locale: UnterstuetzteSprache }>;
+    SettingsPanel?: ComponentType<PluginSettingsPanelProps>;
+  }
+
+  export interface PluginSqlMigration {
+    name: string;
+    sql: string;
+  }
+
+  export interface PluginDbScope {
+    readonly schemaName: string;
+    query<T = Record<string, unknown>>(
+      sql: string,
+      params?: unknown[]
+    ): Promise<{ rows: T[]; rowCount: number }>;
+  }
+
+  export interface PluginBackendAnfrage {
+    method: string;
+    path: string;
+    scope: 'team' | 'club' | 'system';
+    params: Record<string, string>;
+    query: Record<string, unknown>;
+    body: unknown;
+  }
+
+  export interface PluginBackendAntwort {
+    status: number;
+    body: unknown;
+  }
+
+  export interface PluginBackendKontext {
+    pluginId: PluginId;
+    manifest: PluginManifest;
+    db: PluginDbScope;
+    storage?: PluginStorageScope;
+    notifications?: PluginNotificationScope;
+    coreAdmin?: PluginCoreAdminScope;
+    user: BenutzerKonto;
+    locale: UnterstuetzteSprache;
+    club: ClubKontext | null;
+    team: TeamKontext | null;
+    isReadOnly: boolean;
+    clubRolle: ClubRolle | null;
+    effektiveTeamRolle: TeamRolle | null;
+    userGroups: string[];
+    hasPermission(permission: PluginPermission): boolean;
+    hasApprovedCapability(capability: PrivilegiertePluginPermission): boolean;
   }
 
   export interface PluginPublicKontext {
-    createTeamS3ReadScope?: (teamId: string) => Pick<PluginS3Scope, 'prefix' | 'getSignedDownloadUrl'> | undefined;
+    pluginId: PluginId;
+    manifest: PluginManifest;
     getSignedDownloadUrlForTeam?: (params: {
       teamId: string;
       objectPath: string;
@@ -384,133 +587,26 @@ declare module '@sidelineos/plugin-sdk' {
     }) => Promise<{ url: string; key: string; expiresIn: number }>;
   }
 
-  export interface PluginBackendKontext {
-    readonly pluginId: PluginId;
-    readonly manifest: PluginManifest;
-    readonly db: PluginDbScope;
-    readonly s3?: PluginS3Scope;
-    readonly cleanupQueue?: PluginCleanupQueueScope;
-    readonly notifications?: PluginNotificationScope;
-    readonly user: BenutzerKonto;
-    readonly locale: string;
-    readonly team: TeamKontext;
-    readonly teamRolle: TeamRolle;
-    readonly userUnits?: SpielerUnit[];
-    hasPermission(permission: PluginPermission): boolean;
-  }
-
   export interface SidelineBackendPlugin {
-    readonly manifest: PluginManifest;
-    readonly migrations?: Array<{ name: string; sql: string }>;
-    readonly notificationChannels?: PluginNotificationChannel[];
+    manifest: PluginManifest;
+    migrations?: PluginSqlMigration[];
+    storageProvider?: StorageProviderAdapter;
+    notificationChannels?: PluginNotificationChannelDef[];
     deliverNotification?: (
       event: NotificationDispatchEvent,
-      ctx: PluginNotificationChannelKontext
+      ctx: { pluginId: PluginId; manifest: PluginManifest; channelId: string; db: PluginDbScope }
     ) => Promise<{ delivered: number; error?: string }>;
     handleRequest?: (
-      req: {
-        method: string;
-        path: string;
-        params: Record<string, string>;
-        query: Record<string, unknown>;
-        body: unknown;
-      },
+      req: PluginBackendAnfrage,
       ctx: PluginBackendKontext
-    ) => Promise<{ status: number; body: unknown }>;
+    ) => Promise<PluginBackendAntwort>;
     handlePublicRequest?: (
-      req: {
-        method: string;
-        path: string;
-        query: Record<string, unknown>;
-        body: unknown;
-      },
+      req: Omit<PluginBackendAnfrage, 'params' | 'scope'>,
       db: PluginDbScope,
-      publicCtx?: PluginPublicKontext
-    ) => Promise<{ status: number; body: unknown }>;
-    listExportableItems?: (
-      ctx: PluginBackendKontext,
-      options?: { season?: string }
-    ) => Promise<PluginScopeItem[]>;
-    exportScope?: (
-      ctx: PluginBackendKontext,
-      options?: { itemIds?: string[]; season?: string }
-    ) => Promise<PluginExportScopeResult>;
-    importScope?: (
-      ctx: PluginBackendKontext,
-      bundle: PluginExportScopeResult,
-      options?: { mode: 'replace' | 'merge' }
-    ) => Promise<{ imported: number; skipped: number }>;
+      publicCtx: PluginPublicKontext
+    ) => Promise<PluginBackendAntwort>;
   }
 
-  export interface SidelinePlugin {
-    manifest: PluginManifest;
-    Provider?: ComponentType<PluginProviderProps>;
-    defaultTab?: string;
-    getTabs?: (ctx: { teamRolle: TeamRolle; locale?: string }) => PluginTab[];
-    PrimaerAktion?: ComponentType<{ ctx: PluginLaufzeitKontext; className: string }>;
-    renderMainView?: (ctx: PluginLaufzeitKontext) => ReactNode;
-    renderPublicShareView?: (ctx: {
-      token: string;
-      locale?: string;
-      onSchliessen: () => void;
-    }) => ReactNode;
-    settingsPanels?: {
-      user?: ComponentType<{ ctx: PluginSettingsKontext }>;
-      team?: ComponentType<{ ctx: PluginSettingsKontext }>;
-      sysadmin?: ComponentType<{ ctx: PluginSettingsKontext }>;
-    };
-    themes?: readonly PluginThemePreset[];
-  }
-
-  export const SIDELINE_CSS_TOKENS: Record<string, SidelineCssTokenDefinition>;
-  export const SIDELINE_STANDARD_THEME_TOKENS: Record<SidelineCssToken, string>;
-  export const CORE_STANDARD_THEME_PRESET: PluginThemePreset;
-  export const STANDARD_THEME_REF: string;
-
-  export function holeAktuelleBrandKonfig(explizitName?: string): BrandKonfiguration;
-  export function teileWortmarke(produktName: string): { basis: string; akzent: string };
-  export function uebersetzeSchluessel(
-    woerterbuecher: SprachWoerterbuecher,
-    sprache: string | undefined,
-    schluessel: string,
-    variablen?: Record<string, string | number | undefined>
-  ): string;
-  export function createPluginTranslator(
-    woerterbuecher: SprachWoerterbuecher,
-    locale?: string
-  ): (schluessel: string, variablen?: Record<string, string | number | undefined>) => string;
-  export function holePermissionBeschreibung(
-    permission: PluginPermission,
-    locale?: string
-  ): string;
-  export function ermittleEintragSaison(eintrag: {
-    saison?: string;
-    eventDate: string;
-  }): string;
-  export function filtereNachSaison<T extends { saison?: string; eventDate: string }>(
-    eintraege: readonly T[],
-    saison: string
-  ): T[];
-  export function normalisiereHexFarbe(raw?: string): string | null;
-  export function berechneRelativeLuminanz(hex: string): number;
-  export function ermittleKontrastTextFarbe(hex: string): '#0B0E11' | '#FFFFFF';
-  export function ermittleHoverAkzentFarbe(hex: string): string;
-  export function ermittleTeamAkzentTokens(primaerFarbe?: string): TeamAkzentTokens | null;
-  export function validiereThemeSlug(raw: unknown): string | null;
-  export function bauePluginThemeRef(pluginId: string, themeId: string): string;
-  export function parseThemeRef(raw: unknown): GeparsteThemeRef | null;
-  export function validiereThemeTokenWert(token: string, rawWert: unknown): string | null;
-  export function bereinigePluginThemePresets(raw: unknown): PluginThemePreset[];
-  export function sammleVerfuegbareThemes(
-    quellen: ReadonlyArray<{
-      pluginId: string;
-      pluginName: string;
-      themes?: readonly PluginThemePreset[];
-    }>
-  ): VerfuegbaresThemeEintrag[];
-  export function loeseAktivesThemeAuf(optionen: {
-    userPreferredTheme?: string | null;
-    instanceDefaultTheme?: string | null;
-    verfuegbareThemes: readonly VerfuegbaresThemeEintrag[];
-  }): AufgeloestesThemeErgebnis;
+  export function definierePlugin(plugin: SidelinePlugin): SidelinePlugin;
+  export function definiereBackendPlugin(plugin: SidelineBackendPlugin): SidelineBackendPlugin;
 }

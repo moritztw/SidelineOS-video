@@ -1,16 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { PluginLaufzeitKontext } from '@sidelineos/plugin-sdk';
-import { createPluginTranslator } from '@sidelineos/plugin-sdk';
-import { Camera, Check, Save, SlidersHorizontal, Upload, X } from 'lucide-react';
+import {
+  Camera,
+  Check,
+  FileSpreadsheet,
+  Save,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useVideoAnalysis } from '../context/VideoAnalysisContext';
-import { VIDEO_WOERTERBUCH } from '../i18n/woerterbuch';
-import { videoApi } from '../services/apiClient';
+import { erstelleVideoTranslator } from '../i18n/woerterbuch';
+import {
+  bereinigeAnmerkungsKonfig,
+  ermittleZielgruppenOptionen,
+  normalisiereSichtbarkeit,
+} from '../services/annotationVisibility';
+import { erstelleStandardTeamSchema } from '../services/taggingEngine';
 import type {
+  HudlCsvImportErgebnis,
   PlayEintrag,
   SichtbarkeitsStufe,
   VideoKategorie,
   VideoReelEintrag,
 } from '../types/video';
+import { HudlCsvImportDialog } from './HudlCsvImportDialog';
 
 async function ermittleVideoDauerMs(file: File, fallbackMs: number): Promise<number> {
   if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') {
@@ -58,19 +72,31 @@ export function ReelEditModal({
   onSchliessen: () => void;
   onGespeichert: () => Promise<void>;
 }) {
-  const t = createPluginTranslator(VIDEO_WOERTERBUCH, ctx.locale);
-  const { oeffneReel } = useVideoAnalysis();
+  const t = erstelleVideoTranslator(ctx.locale);
+  const { api, oeffneReel, seasons, teamSchema, setTeamSchema } = useVideoAnalysis();
 
-  const [tab, setTab] = useState<'META' | 'ANGLE'>('META');
+  const [tab, setTab] = useState<'META' | 'ANGLE' | 'CSV'>('META');
+
+  const schema = teamSchema ?? erstelleStandardTeamSchema(ctx.team?.id ?? reel.teamId);
+  const sharingKonfig = useMemo(
+    () => bereinigeAnmerkungsKonfig(schema.annotationSharing),
+    [schema.annotationSharing]
+  );
+  const zielgruppenOptionen = useMemo(
+    () => ermittleZielgruppenOptionen(sharingKonfig, ctx.locale),
+    [sharingKonfig, ctx.locale]
+  );
 
   // Metadaten-State
   const [title, setTitle] = useState(reel.title);
   const [category, setCategory] = useState<VideoKategorie>(reel.category);
   const [eventDate, setEventDate] = useState(reel.eventDate);
   const [season, setSeason] = useState(reel.saison);
-  const [visibility, setVisibility] = useState<SichtbarkeitsStufe>(reel.visibility);
+  const [visibility, setVisibility] = useState<SichtbarkeitsStufe>(
+    normalisiereSichtbarkeit(reel.visibility)
+  );
 
-  // Bestehende Plays für Angle-Zuordnung
+  // Bestehende Plays für Angle-Zuordnung & Hudl CSV Import
   const [reelPlays, setReelPlays] = useState<PlayEintrag[]>([]);
   const [laedtPlays, setLaedtPlays] = useState(false);
 
@@ -84,6 +110,9 @@ export function ReelEditModal({
   const [tapeFile, setTapeFile] = useState<File | null>(null);
   const [offsetMsText, setOffsetMsText] = useState('');
 
+  // Hudl CSV-State (#9)
+  const [csvErgebnis, setCsvErgebnis] = useState<HudlCsvImportErgebnis | null>(null);
+
   const [speichert, setSpeichert] = useState(false);
   const [fortschritt, setFortschritt] = useState<number | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -92,16 +121,14 @@ export function ReelEditModal({
 
   useEffect(() => {
     setLaedtPlays(true);
-    videoApi
-      .holeReelDetails(ctx.team.id, reel.id)
+    api
+      .holeReelDetails(reel.id)
       .then((detail) => setReelPlays(detail.plays))
       .catch(() => undefined)
       .finally(() => setLaedtPlays(false));
-  }, [ctx.team.id, reel.id]);
+  }, [api, reel.id]);
 
-  const gewaehlterAngleCode = (
-    anglePreset === 'CUSTOM' ? customAngle : anglePreset
-  )
+  const gewaehlterAngleCode = (anglePreset === 'CUSTOM' ? customAngle : anglePreset)
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9_-]/g, '_');
@@ -115,7 +142,7 @@ export function ReelEditModal({
     setErfolg(null);
     setSpeichert(true);
     try {
-      await videoApi.aktualisiereReel(ctx.team.id, reel.id, {
+      await api.aktualisiereReel(reel.id, {
         title: title.trim(),
         category,
         eventDate,
@@ -161,13 +188,8 @@ export function ReelEditModal({
         }
         const dauerMs = await ermittleVideoDauerMs(tapeFile, 25000);
         const path = `reels/${reel.id}/angles/${gewaehlterAngleCode}_${Date.now()}_${tapeFile.name}`;
-        const uploaded = await videoApi.ladeDateiZuS3(
-          ctx.team.id,
-          tapeFile,
-          path,
-          setFortschritt
-        );
-        await videoApi.fuegeAngleHinzu(ctx.team.id, reel.id, {
+        const uploaded = await api.ladeDateiZuStorage(tapeFile, path, setFortschritt);
+        await api.fuegeAngleHinzu(reel.id, {
           angleCode: gewaehlterAngleCode,
           mode: 'FULL_TAPE',
           tape: {
@@ -193,7 +215,7 @@ export function ReelEditModal({
           const item = clipZuordnungen[i];
           const dauerMs = await ermittleVideoDauerMs(item.file, 12000);
           const path = `reels/${reel.id}/angles/${gewaehlterAngleCode}_${Date.now()}_${i + 1}_${item.file.name}`;
-          const uploaded = await videoApi.ladeDateiZuS3(ctx.team.id, item.file, path, (p) =>
+          const uploaded = await api.ladeDateiZuStorage(item.file, path, (p) =>
             setFortschritt(Math.round(((i + p / 100) / clipZuordnungen.length) * 100))
           );
           assignments.push({
@@ -207,7 +229,7 @@ export function ReelEditModal({
             fileSizeBytes: item.file.size,
           });
         }
-        const res = await videoApi.fuegeAngleHinzu(ctx.team.id, reel.id, {
+        const res = await api.fuegeAngleHinzu(reel.id, {
           angleCode: gewaehlterAngleCode,
           mode: 'CLIPS',
           assignments,
@@ -220,11 +242,41 @@ export function ReelEditModal({
       }
 
       await onGespeichert();
-      const aktualisiert = await videoApi.holeReelDetails(ctx.team.id, reel.id);
+      const aktualisiert = await api.holeReelDetails(reel.id);
       setReelPlays(aktualisiert.plays);
       setFortschritt(null);
     } catch (err) {
       setFehler(err instanceof Error ? err.message : 'Angle-Upload fehlgeschlagen.');
+    } finally {
+      setSpeichert(false);
+    }
+  };
+
+  const handleHudlCsvImportieren = async (ergebnis: HudlCsvImportErgebnis) => {
+    setFehler(null);
+    setErfolg(null);
+    setSpeichert(true);
+    try {
+      const res = await api.importiereHudlCsvBulk(reel.id, {
+        playPatches: ergebnis.playPatches,
+        newCustomFields: ergebnis.newCustomFields,
+      });
+      if (res.addedFields > 0) {
+        const schemaRes = await api.holeSchema().catch(() => null);
+        if (schemaRes?.schema) {
+          setTeamSchema(schemaRes.schema);
+        }
+      }
+      await onGespeichert();
+      const aktualisiert = await api.holeReelDetails(reel.id);
+      setReelPlays(aktualisiert.plays);
+      setErfolg(
+        `Hudl CSV importiert: ${res.updatedPlays} Spielzüge aktualisiert${
+          res.addedFields > 0 ? `, ${res.addedFields} neue Custom-Spalten angelegt` : ''
+        }.`
+      );
+    } catch (err) {
+      setFehler(err instanceof Error ? err.message : 'Hudl CSV-Import fehlgeschlagen.');
     } finally {
       setSpeichert(false);
     }
@@ -237,7 +289,7 @@ export function ReelEditModal({
       aria-modal="true"
       aria-label={t('editReel')}
     >
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-sl-border bg-sl-surface p-6 space-y-5">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-sl-border bg-sl-surface p-6 space-y-5">
         <div className="flex items-center justify-between border-b border-sl-border pb-4">
           <div>
             <h2 className="text-lg font-semibold text-sl-heading">{t('editReel')}</h2>
@@ -255,7 +307,7 @@ export function ReelEditModal({
         </div>
 
         {/* Bereichs-Umschalter */}
-        <div className="grid grid-cols-2 gap-1 rounded-lg border border-sl-border bg-sl-canvas p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-sl-border bg-sl-canvas p-1">
           <button
             type="button"
             onClick={() => {
@@ -263,11 +315,11 @@ export function ReelEditModal({
               setErfolg(null);
               setTab('META');
             }}
-            className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+            className={`rounded-md px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
               tab === 'META' ? 'bg-sl-elevated text-sl-heading' : 'text-sl-muted hover:text-sl-primary'
             }`}
           >
-            Metadaten bearbeiten
+            Metadaten
           </button>
           <button
             type="button"
@@ -276,12 +328,26 @@ export function ReelEditModal({
               setErfolg(null);
               setTab('ANGLE');
             }}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+            className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
               tab === 'ANGLE' ? 'bg-sl-elevated text-sl-heading' : 'text-sl-muted hover:text-sl-primary'
             }`}
           >
             <Camera className="h-3.5 w-3.5" aria-hidden="true" />
-            Weiteren Angle hinzufügen
+            2. Angle hinzufügen
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFehler(null);
+              setErfolg(null);
+              setTab('CSV');
+            }}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
+              tab === 'CSV' ? 'bg-sl-elevated text-sl-heading' : 'text-sl-muted hover:text-sl-primary'
+            }`}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('hudlCsvTab')}
           </button>
         </div>
 
@@ -310,11 +376,17 @@ export function ReelEditModal({
                 <span className="text-sl-muted">Saison</span>
                 <input
                   type="text"
+                  list="reel-edit-seasons"
                   value={season}
                   onChange={(e) => setSeason(e.target.value)}
                   placeholder="z. B. 2026"
                   className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading video-tabular focus:border-sl-accent focus:outline-none"
                 />
+                <datalist id="reel-edit-seasons">
+                  {seasons.map((s) => (
+                    <option key={s.id} value={s.name} />
+                  ))}
+                </datalist>
               </label>
               <label className="space-y-1 text-xs">
                 <span className="text-sl-muted">Kategorie</span>
@@ -331,22 +403,22 @@ export function ReelEditModal({
                 </select>
               </label>
               <label className="space-y-1 text-xs">
-                <span className="text-sl-muted">Sichtbarkeit</span>
+                <span className="text-sl-muted">Team-Sichtbarkeit</span>
                 <select
                   value={visibility}
                   onChange={(e) => setVisibility(e.target.value as SichtbarkeitsStufe)}
                   className="w-full rounded-lg border border-sl-border bg-sl-canvas px-3 py-2 text-sm text-sl-heading focus:border-sl-accent focus:outline-none"
                 >
-                  <option value="COACHES_ONLY">{t('visCoachesOnly')}</option>
-                  <option value="ALL_PLAYERS">{t('visAllPlayers')}</option>
-                  <option value="UNIT_OFFENSE">{t('visUnitOffense')}</option>
-                  <option value="UNIT_DEFENSE">{t('visUnitDefense')}</option>
-                  <option value="UNIT_SPECIAL_TEAMS">{t('visUnitSpecial')}</option>
+                  {zielgruppenOptionen.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
           </div>
-        ) : (
+        ) : tab === 'ANGLE' ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-xs">
@@ -489,7 +561,7 @@ export function ReelEditModal({
             {fortschritt !== null && (
               <div className="space-y-1">
                 <div className="flex justify-between text-xs text-sl-muted video-tabular">
-                  <span>S3 Upload</span>
+                  <span>Storage Upload</span>
                   <span>{fortschritt}%</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-sl-canvas">
@@ -500,6 +572,22 @@ export function ReelEditModal({
                 </div>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <HudlCsvImportDialog
+              variant="inline"
+              locale={ctx.locale}
+              schema={schema}
+              zielPlays={reelPlays.map((p) => ({
+                id: p.id,
+                playNumber: p.playNumber,
+                breakdown: p.breakdown,
+              }))}
+              onErgebnisChange={(res) => {
+                setCsvErgebnis(res);
+              }}
+            />
           </div>
         )}
 
@@ -518,9 +606,9 @@ export function ReelEditModal({
               <button
                 type="button"
                 onClick={async () => {
-                  await oeffneReel(ctx.team.id, reel.id);
+                  await oeffneReel(reel.id);
                   onSchliessen();
-                  ctx.onTabWechseln('sync-cut');
+                  ctx.navigateToView('sync-cut');
                 }}
                 className="inline-flex items-center gap-1 rounded bg-sl-elevated px-2.5 py-1 text-xs font-medium text-sl-heading hover:bg-sl-border-strong whitespace-nowrap"
               >
@@ -542,22 +630,39 @@ export function ReelEditModal({
           {tab === 'META' ? (
             <button
               type="button"
-              disabled={speichert}
+              disabled={speichert || ctx.isReadOnly}
               onClick={handleMetaSpeichern}
               className="inline-flex items-center gap-2 rounded-lg bg-sl-accent px-4 py-2 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" aria-hidden="true" />
               {speichert ? 'Speichere...' : 'Metadaten speichern'}
             </button>
-          ) : (
+          ) : tab === 'ANGLE' ? (
             <button
               type="button"
-              disabled={speichert}
+              disabled={speichert || ctx.isReadOnly}
               onClick={handleAngleHochladen}
               className="inline-flex items-center gap-2 rounded-lg bg-sl-accent px-4 py-2 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover disabled:opacity-50"
             >
               <Upload className="h-3.5 w-3.5" aria-hidden="true" />
               {speichert ? 'Lade hoch...' : 'Angle hinzufügen'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                speichert ||
+                ctx.isReadOnly ||
+                !csvErgebnis ||
+                csvErgebnis.playPatches.length === 0
+              }
+              onClick={() => csvErgebnis && handleHudlCsvImportieren(csvErgebnis)}
+              className="inline-flex items-center gap-2 rounded-lg bg-sl-accent px-4 py-2 text-xs font-semibold text-sl-accent-contrast hover:bg-sl-accent-hover disabled:opacity-50"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
+              {speichert
+                ? 'Importiere...'
+                : `${csvErgebnis?.playPatches.length ?? 0} Spielzüge importieren`}
             </button>
           )}
         </div>

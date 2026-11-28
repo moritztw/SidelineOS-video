@@ -2,26 +2,33 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useState,
+  type ReactNode,
 } from 'react';
-import type { PluginProviderProps } from '@sidelineos/plugin-sdk';
-import { videoApi } from '../services/apiClient';
+import { erstelleVideoApi, type ApiFetchFn, type VideoApiClient } from '../services/apiClient';
 import { STANDARD_HOTKEYS } from '../services/frameAndHotkeys';
 import { erstelleStandardTeamSchema } from '../services/taggingEngine';
 import type {
   BenutzerVideoPraeferenzen,
+  ClubTeamInfo,
   CoachNotiz,
   FrameTelestration,
   PlayEintrag,
+  PluginSaisonEintrag,
   SmartPlaylist,
   TeamTaggingSchema,
   VideoReelEintrag,
 } from '../types/video';
 
 interface VideoAnalysisContextWert {
+  api: VideoApiClient;
   reels: VideoReelEintrag[];
   laedtReels: boolean;
   fehler: string | null;
+  seasons: PluginSaisonEintrag[];
+  gewaehlteSaison: string;
+  clubTeams: ClubTeamInfo[];
   aktivesReel: VideoReelEintrag | null;
   aktivePlays: PlayEintrag[];
   telestrations: FrameTelestration[];
@@ -31,11 +38,13 @@ interface VideoAnalysisContextWert {
   playlists: SmartPlaylist[];
   uploadModalOffen: boolean;
   aktiverPlaylistFilterIds: string[] | null;
+  setGewaehlteSaison: (saison: string) => void;
+  setSeasons: (seasons: PluginSaisonEintrag[]) => void;
   setUploadModalOffen: (offen: boolean) => void;
   setAktiverPlaylistFilterIds: (ids: string[] | null) => void;
   setFehler: (msg: string | null) => void;
   ladeBasisDaten: (teamId: string, season: string, userUuid: string) => Promise<void>;
-  oeffneReel: (teamId: string, reelId: string) => Promise<void>;
+  oeffneReel: (reelId: string) => Promise<void>;
   aktualisierePlaysLokal: (updater: (alt: PlayEintrag[]) => PlayEintrag[]) => void;
   aktualisiereTelestrationsLokal: (
     updater: (alt: FrameTelestration[]) => FrameTelestration[]
@@ -49,10 +58,21 @@ interface VideoAnalysisContextWert {
 
 const VideoAnalysisContext = createContext<VideoAnalysisContextWert | null>(null);
 
-export function VideoAnalysisProvider({ children }: PluginProviderProps) {
+export function VideoAnalysisProvider({
+  apiFetch,
+  children,
+}: {
+  apiFetch: ApiFetchFn;
+  children: ReactNode;
+}) {
+  const api = useMemo(() => erstelleVideoApi(apiFetch), [apiFetch]);
+
   const [reels, setReels] = useState<VideoReelEintrag[]>([]);
   const [laedtReels, setLaedtReels] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [seasons, setSeasons] = useState<PluginSaisonEintrag[]>([]);
+  const [gewaehlteSaison, setGewaehlteSaison] = useState<string>('ALL');
+  const [clubTeams, setClubTeams] = useState<ClubTeamInfo[]>([]);
   const [aktivesReel, setAktivesReel] = useState<VideoReelEintrag | null>(null);
   const [aktivePlays, setAktivePlays] = useState<PlayEintrag[]>([]);
   const [telestrations, setTelestrations] = useState<FrameTelestration[]>([]);
@@ -68,16 +88,20 @@ export function VideoAnalysisProvider({ children }: PluginProviderProps) {
       setLaedtReels(true);
       setFehler(null);
       try {
-        const [reelsRes, schemaRes, prefsRes, plRes] = await Promise.all([
-          videoApi.holeReels(teamId, season),
-          videoApi.holeSchema(teamId),
-          videoApi.holePraeferenzen(teamId),
-          videoApi.holePlaylists(teamId, season),
+        const [reelsRes, schemaRes, prefsRes, plRes, seasonsRes, clubTeamsRes] = await Promise.all([
+          api.holeReels(season),
+          api.holeSchema(),
+          api.holePraeferenzen(),
+          api.holePlaylists(season),
+          api.holeSaisons().catch(() => ({ seasons: [] as PluginSaisonEintrag[] })),
+          api.holeClubTeams().catch(() => ({ teams: [] as ClubTeamInfo[] })),
         ]);
         setReels(reelsRes.reels);
         setTeamSchema(schemaRes.schema);
         setUserPrefs(prefsRes.prefs);
         setPlaylists(plRes.playlists);
+        setSeasons(seasonsRes.seasons);
+        setClubTeams(clubTeamsRes.teams);
       } catch (err) {
         setFehler(err instanceof Error ? err.message : 'Fehler beim Laden der Videodaten.');
         setTeamSchema((alt) => alt ?? erstelleStandardTeamSchema(teamId));
@@ -96,28 +120,35 @@ export function VideoAnalysisProvider({ children }: PluginProviderProps) {
         setLaedtReels(false);
       }
     },
-    []
+    [api]
   );
 
-  const oeffneReel = useCallback(async (teamId: string, reelId: string) => {
-    setFehler(null);
-    try {
-      const detail = await videoApi.holeReelDetails(teamId, reelId);
-      setAktivesReel(detail.reel);
-      setAktivePlays(detail.plays);
-      setTelestrations(detail.telestrations);
-      setNotizen(detail.notes);
-    } catch (err) {
-      setFehler(err instanceof Error ? err.message : 'Reel konnte nicht geladen werden.');
-    }
-  }, []);
+  const oeffneReel = useCallback(
+    async (reelId: string) => {
+      setFehler(null);
+      try {
+        const detail = await api.holeReelDetails(reelId);
+        setAktivesReel(detail.reel);
+        setAktivePlays(detail.plays);
+        setTelestrations(detail.telestrations);
+        setNotizen(detail.notes);
+      } catch (err) {
+        setFehler(err instanceof Error ? err.message : 'Reel konnte nicht geladen werden.');
+      }
+    },
+    [api]
+  );
 
   return (
     <VideoAnalysisContext.Provider
       value={{
+        api,
         reels,
         laedtReels,
         fehler,
+        seasons,
+        gewaehlteSaison,
+        clubTeams,
         aktivesReel,
         aktivePlays,
         telestrations,
@@ -127,6 +158,8 @@ export function VideoAnalysisProvider({ children }: PluginProviderProps) {
         playlists,
         uploadModalOffen,
         aktiverPlaylistFilterIds,
+        setGewaehlteSaison,
+        setSeasons,
         setUploadModalOffen,
         setAktiverPlaylistFilterIds,
         setFehler,

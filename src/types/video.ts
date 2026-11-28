@@ -1,11 +1,38 @@
 export type VideoKategorie = 'GAME' | 'PRACTICE' | 'SCOUTING' | 'SELF_SCOUT' | 'CUSTOM';
 
+/**
+ * Sportartagnostische Anmerkungs- und Reel-Sichtbarkeit (SDK v2.0):
+ * - STAFF_ONLY / COACHES_ONLY: Nur Team-Admins, Staff & Club-Admins
+ * - ALL_MEMBERS / ALL_PLAYERS: Alle Teammitglieder
+ * - GROUP:<Gruppenname>: Nur Mitglieder in ctx.userGroups mit passendem Namen
+ * - UNIT_OFFENSE / UNIT_DEFENSE / UNIT_SPECIAL_TEAMS: Abwärtskompatible Legacy-Werte
+ */
 export type SichtbarkeitsStufe =
+  | 'STAFF_ONLY'
+  | 'ALL_MEMBERS'
+  | `GROUP:${string}`
   | 'COACHES_ONLY'
   | 'ALL_PLAYERS'
   | 'UNIT_OFFENSE'
   | 'UNIT_DEFENSE'
   | 'UNIT_SPECIAL_TEAMS';
+
+/**
+ * Vereins- und Team-Freigabe-Umfang eines Video-Reels (#10):
+ * - PRIVATE_ADMIN: Nur Uploader, Team-Admins & Club-Admins
+ * - TEAM_ONLY: Standard — nur das Besitzer-Team
+ * - CLUB_WIDE: Für alle Teams des Vereins sichtbar
+ * - SELECTED_TEAMS: Gezielt für ausgewählte Unterteams freigegeben
+ */
+export type ReelShareScope = 'PRIVATE_ADMIN' | 'TEAM_ONLY' | 'CLUB_WIDE' | 'SELECTED_TEAMS';
+
+/**
+ * Rechte-Modus eines Teams auf einem Reel (#10):
+ * - OWNER: Quell-Team (volle Kontrolle)
+ * - READ_ONLY: Empfänger-Team darf ansehen & im Film Room abspielen, aber nicht bearbeiten
+ * - OWN_BREAKDOWN: Empfänger-Team führt ein eigenes Breakdown & eigene Anmerkungen auf derselben Zero-Copy-Videodatei
+ */
+export type ReelAccessMode = 'OWNER' | 'READ_ONLY' | 'OWN_BREAKDOWN';
 
 export type WinkelCode = 'SIDELINE' | 'ENDZONE' | 'TIGHT' | (string & {});
 
@@ -113,9 +140,45 @@ export interface CoachNotiz {
   updatedAt: string;
 }
 
+export interface GruppenFarbEintrag {
+  group: string;
+  label: string;
+  color: string;
+}
+
 export interface AnmerkungsFreigabeKonfig {
   enabled: boolean;
-  colorMap: Record<SichtbarkeitsStufe, string>;
+  staffColor: string;
+  allMembersColor: string;
+  groupColors: GruppenFarbEintrag[];
+  /** Abwärtskompatible Zuordnungstabelle (automatisch synchronisiert). */
+  colorMap?: Record<string, string>;
+}
+
+export interface PluginSaisonEintrag {
+  id: string;
+  clubId: string;
+  teamId: string;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ClubTeamInfo {
+  clubId: string;
+  teamId: string;
+  teamName: string;
+  teamSlug: string;
+  teamStatus: 'ACTIVE' | 'ARCHIVED';
+  lastSeenAt: string;
+}
+
+export interface TeamReelFreigabeEintrag {
+  teamId: string;
+  teamName: string;
+  accessMode: Exclude<ReelAccessMode, 'OWNER'>;
+  allowedFields?: string[] | null;
 }
 
 export interface PlayBreakdownDaten {
@@ -169,6 +232,7 @@ export interface VideoReelEintrag {
   id: string;
   accessId: string;
   teamId: string;
+  clubId?: string;
   saison: string;
   title: string;
   category: VideoKategorie;
@@ -179,6 +243,36 @@ export interface VideoReelEintrag {
   sharedFromTeamId?: string | null;
   sharedFromTeamName?: string | null;
   allowedFields?: string[] | null;
+  shareScope?: ReelShareScope;
+  clubWideAccessMode?: Exclude<ReelAccessMode, 'OWNER'>;
+  accessMode?: ReelAccessMode;
+  canEdit?: boolean;
+  canManageSharing?: boolean;
+  refCount?: number;
+  totalSizeBytes?: number;
+  sharedTeams?: TeamReelFreigabeEintrag[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClubReelUebersicht {
+  reelId: string;
+  ownerClubId: string;
+  ownerTeamId: string;
+  ownerTeamName: string;
+  season: string;
+  title: string;
+  category: VideoKategorie;
+  eventDate: string;
+  visibility: SichtbarkeitsStufe;
+  shareScope: ReelShareScope;
+  clubWideAccessMode: Exclude<ReelAccessMode, 'OWNER'>;
+  sharedTeams: TeamReelFreigabeEintrag[];
+  refCount: number;
+  totalSizeBytes: number;
+  playCount: number;
+  angles: WinkelCode[];
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -318,4 +412,46 @@ export interface SidelineBundleV1 {
       status?: NotizStatus;
     }>;
   }>;
+}
+
+export type HudlCsvSpaltenAktion = 'map_existing' | 'create_custom' | 'ignore';
+
+export interface HudlCsvSpaltenMapping {
+  columnIndex: number;
+  csvHeader: string;
+  sampleValues: string[];
+  action: HudlCsvSpaltenAktion;
+  targetFieldKey?: string;
+  customFieldLabel: string;
+  customFieldType: 'text' | 'number';
+}
+
+export interface HudlCsvZeilenZuordnung {
+  rowIndex: number;
+  csvPlayNumber: number | null;
+  matchedPlayId?: string;
+  matchedPlayNumber: number | null;
+  matchReason: 'play_number' | 'sequence' | 'unmatched';
+}
+
+export interface HudlCsvImportVorschau {
+  delimiter: ',' | ';' | '\t';
+  totalRows: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  playNumberColumnIndex: number | null;
+  columns: HudlCsvSpaltenMapping[];
+  rows: string[][];
+  rowMatches: HudlCsvZeilenZuordnung[];
+}
+
+export interface HudlCsvImportErgebnis {
+  newCustomFields: TaggingFeldKonfig[];
+  playPatches: Array<{
+    playId?: string;
+    playNumber: number;
+    breakdown: PlayBreakdownDaten;
+  }>;
+  matchedCount: number;
+  unmatchedCount: number;
 }
